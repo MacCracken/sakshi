@@ -4,7 +4,17 @@ set -eu
 # Run sakshi test suite (.tcyr files)
 # Expects: build/cc2 and build/cyrb available
 
-CYRB="${CYRB:-./build/cyrb}"
+if [ -n "${CYRB:-}" ]; then
+  CYRB="$CYRB"
+elif command -v cyrb >/dev/null 2>&1; then
+  CYRB="cyrb"
+elif [ -x "$HOME/.cyrius/bin/cyrb" ]; then
+  CYRB="$HOME/.cyrius/bin/cyrb"
+elif [ -x "./build/cyrb" ]; then
+  CYRB="./build/cyrb"
+else
+  echo "error: cyrb not found" >&2; exit 1
+fi
 BUILD_DIR="${BUILD_DIR:-./build}"
 
 echo "=== sakshi test suite ==="

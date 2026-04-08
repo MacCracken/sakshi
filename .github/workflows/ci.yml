@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CYRIUS_VERSION: "2.0.0"
+  CYRIUS_VERSION: "2.1.0"
 
 jobs:
   # ── Build ──
@@ -31,6 +31,7 @@ jobs:
           cp "$CYRIUS_HOME/bin/cc2" ./build/cc2
           cp "$CYRIUS_HOME/bin/cyrb" ./build/cyrb
           chmod +x ./build/cc2 ./build/cyrb
+          ln -sf "$CYRIUS_HOME/lib" ./lib
           echo "Cyrius $CYRIUS_VERSION installed"
 
       - name: Build tests
@@ -64,6 +65,7 @@ jobs:
           cp "$CYRIUS_HOME/bin/cc2" ./build/cc2
           cp "$CYRIUS_HOME/bin/cyrb" ./build/cyrb
           chmod +x ./build/cc2 ./build/cyrb
+          ln -sf "$CYRIUS_HOME/lib" ./lib
 
       - name: Syntax check
         run: |
@@ -111,6 +113,7 @@ jobs:
           cp "$CYRIUS_HOME/bin/cc2" ./build/cc2
           cp "$CYRIUS_HOME/bin/cyrb" ./build/cyrb
           chmod +x ./build/cc2 ./build/cyrb
+          ln -sf "$CYRIUS_HOME/lib" ./lib
 
       - name: Run test suite
         run: sh scripts/test.sh
@@ -132,6 +135,7 @@ jobs:
           cp "$CYRIUS_HOME/bin/cc2" ./build/cc2
           cp "$CYRIUS_HOME/bin/cyrb" ./build/cyrb
           chmod +x ./build/cc2 ./build/cyrb
+          ln -sf "$CYRIUS_HOME/lib" ./lib
 
       - name: Run benchmarks
         run: |

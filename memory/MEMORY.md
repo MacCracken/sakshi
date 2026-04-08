@@ -1,1 +1,2 @@
 - [Foundation layer](project_foundation_layer.md) — zero deps, separate repo from lang but can be incorporated later
+- [Stdlib lib/ symlink](feedback_lib_symlink.md) — never put sakshi files in lib/, it shadows the Cyrius stdlib

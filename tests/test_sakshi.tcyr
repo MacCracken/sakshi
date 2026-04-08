@@ -3,7 +3,7 @@ include "lib/string.cyr"
 include "lib/fmt.cyr"
 include "lib/assert.cyr"
 
-include "lib/sakshi.cyr"
+include "sakshi.cyr"
 
 # ================================================================
 # Error codes
