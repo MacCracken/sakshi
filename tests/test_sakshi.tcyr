@@ -1,4 +1,4 @@
-# Test: sakshi — tracing, error handling, output targets
+# Test: sakshi — error handling and tracing (stderr profile)
 include "lib/string.cyr"
 include "lib/fmt.cyr"
 include "lib/assert.cyr"
@@ -25,10 +25,6 @@ assert(sakshi_is_ok(ERR_OK) == 1, "is_ok on zero");
 assert(sakshi_is_err(err) == 1, "is_err on packed");
 assert(sakshi_is_ok(err) == 0, "is_ok on packed");
 
-test_group("error at span");
-var err3 = sakshi_err_at_span(ERR_INVALID, ERR_CAT_PARSE);
-assert_eq(sakshi_err_context(err3), 0, "at_span depth 0");
-
 # ================================================================
 # Trace output
 # ================================================================
@@ -37,43 +33,11 @@ sakshi_error("test error msg", 14);
 sakshi_warn("test warn msg", 13);
 sakshi_info("test info msg", 13);
 
-# debug/trace suppressed at default level
 assert_eq(sakshi_get_level(), SK_INFO, "default level");
 sakshi_set_level(SK_DEBUG);
 assert_eq(sakshi_get_level(), SK_DEBUG, "set level");
 sakshi_debug("debug visible", 13);
 sakshi_set_level(SK_INFO);
-
-# ================================================================
-# Spans
-# ================================================================
-test_group("span enter/exit");
-sakshi_span_enter("outer", 5);
-assert_eq(sakshi_span_depth(), 1, "depth 1");
-sakshi_span_enter("inner", 5);
-assert_eq(sakshi_span_depth(), 2, "depth 2");
-
-test_group("error at span depth");
-var err4 = sakshi_err_at_span(ERR_BUSY, ERR_CAT_RUNTIME);
-assert_eq(sakshi_err_context(err4), 2, "at_span depth 2");
-
-sakshi_span_exit();
-assert_eq(sakshi_span_depth(), 1, "depth after inner exit");
-sakshi_span_exit();
-assert_eq(sakshi_span_depth(), 0, "depth after outer exit");
-
-# ================================================================
-# Ring buffer
-# ================================================================
-test_group("ring buffer");
-sakshi_output_buffer();
-sakshi_info("ring msg", 8);
-assert_gt(sakshi_ring_event_count(), 0, "event count > 0");
-assert_gt(sakshi_ring_len(), 0, "ring len > 0");
-sakshi_ring_clear();
-assert_eq(sakshi_ring_event_count(), 0, "cleared count");
-assert_eq(sakshi_ring_len(), 0, "cleared len");
-sakshi_set_output(SK_OUT_STDERR);
 
 # ================================================================
 # File output
