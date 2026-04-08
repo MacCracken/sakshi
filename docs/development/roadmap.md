@@ -46,8 +46,9 @@ All items from v0.1.0 through v0.3.0 shipped as a single release.
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Migrate test program to .tcyr test suite (Cyrius v2.0) | Not started |
-| 2 | Migrate to .bcyr benchmarks (Cyrius v2.0) | Not started |
+| 1 | Slim profile .tcyr test suite | Done |
+| 2 | Full profile .tcyr test suite (ring buffer, spans, UDP) | Not started |
+| 3 | .bcyr benchmarks (Cyrius v2.0) | Not started |
 | 3 | Integration tested across 3+ consumer crates | Not started |
 | 4 | Vidya entry for sakshi usage patterns | Not started |
 

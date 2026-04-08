@@ -6,7 +6,7 @@
 
 ```
 sakshi
-├── error      — packed i64 error codes (code + category + reserved)
+├── error      — packed i64 error codes (code + category + optional context)
 ├── trace      — log levels (error/warn/info/debug/trace), structured output
 ├── span       — enter/exit function tracking with timing
 ├── format     — fixed-buffer message formatting (timestamp, level, module, message)
@@ -29,7 +29,7 @@ Application code
 
 ## Error Format
 
-Packed i64: `[63:32 reserved] [31:16 category] [15:0 error code]`
+Packed i64: `[63:32 context] [31:16 category] [15:0 error code]`
 
 Creation: `sakshi_error(code, category)` — single OR + shift, no heap.
 Extraction: `sakshi_err_code(err)`, `sakshi_err_category(err)` — single AND + shift.

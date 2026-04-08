@@ -55,7 +55,11 @@ sakshi_span_exit();
 
 ## Error Format
 
-Packed i64: `[63:32 reserved] [31:16 category] [15:0 error code]`
+Packed i64: `[63:32 context] [31:16 category] [15:0 error code]`
+
+- `sakshi_err_new(code, cat)` — context = 0
+- `sakshi_err_with_ctx(code, cat, ctx)` — caller-defined 32-bit context (source hash, span ID)
+- `sakshi_err_at_span(code, cat)` — context = current span depth (full profile only)
 
 | Category | Value | Domain |
 |----------|-------|--------|

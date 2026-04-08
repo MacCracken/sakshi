@@ -162,8 +162,8 @@ fn _sk_emit(level, msg, msg_len) {
 # Error API
 # ================================================================
 
-fn sakshi_err_new(code, category) { return (category << 16) | (code & 0xFFFF); }
-fn sakshi_err_with_ctx(code, category, context) { return (context << 32) | (category << 16) | (code & 0xFFFF); }
+fn sakshi_err_new(code, category) { return ((category & 0xFFFF) << 16) | (code & 0xFFFF); }
+fn sakshi_err_with_ctx(code, category, context) { return ((context & 0xFFFFFFFF) << 32) | ((category & 0xFFFF) << 16) | (code & 0xFFFF); }
 fn sakshi_err_code(err) { return err & 0xFFFF; }
 fn sakshi_err_category(err) { return (err >> 16) & 0xFFFF; }
 fn sakshi_err_context(err) { return (err >> 32) & 0xFFFFFFFF; }

@@ -30,13 +30,13 @@ enum ErrCode {
 
 # Pack an error code + category into a single i64 (context = 0)
 fn sakshi_err_new(code, category) {
-    return (category << 16) | (code & 0xFFFF);
+    return ((category & 0xFFFF) << 16) | (code & 0xFFFF);
 }
 
 # Pack an error code + category + context into a single i64
 # context: 32-bit value stored in upper bits (source hash, span ID, etc.)
 fn sakshi_err_with_ctx(code, category, context) {
-    return (context << 32) | (category << 16) | (code & 0xFFFF);
+    return ((context & 0xFFFFFFFF) << 32) | ((category & 0xFFFF) << 16) | (code & 0xFFFF);
 }
 
 # Extract the error code (bits 0-15)
