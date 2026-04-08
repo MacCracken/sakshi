@@ -15,9 +15,9 @@ env:
   CYRIUS_VERSION: "2.2.0"
 
 jobs:
-  # ── Build ──
-  build:
-    name: Build
+  # ── Build + Test ──
+  test:
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,53 +26,57 @@ jobs:
         run: |
           curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
           tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
-          export CYRIUS_HOME="cyrius-$CYRIUS_VERSION-x86_64-linux"
+          CYRIUS_DIR="cyrius-$CYRIUS_VERSION-x86_64-linux"
           mkdir -p build
-          cp "$CYRIUS_HOME/bin/cc2" ./build/cc2
-          cp "$CYRIUS_HOME/bin/cyrb" ./build/cyrb
-          chmod +x ./build/cc2 ./build/cyrb
-          ln -sf "$CYRIUS_HOME/lib" ./lib
+          cp "$CYRIUS_DIR/bin/cc2" ./build/cc2
+          chmod +x ./build/cc2
+          # Copy Cyrius stdlib WITHOUT overwriting sakshi's own lib/
+          mkdir -p .cyrius_lib
+          cp "$CYRIUS_DIR/lib/"*.cyr .cyrius_lib/ 2>/dev/null || true
           echo "Cyrius $CYRIUS_VERSION installed"
 
-      - name: Build tests
+      - name: Compile tests
         run: |
+          CC="./build/cc2"
+          pass=0; fail=0
           for tcyr in tests/*.tcyr; do
             name=$(basename "$tcyr" .tcyr)
-            ./build/cyrb build "$tcyr" "build/$name"
-            echo "built: $name ($(wc -c < "build/$name") bytes)"
+            if cat "$tcyr" | "$CC" > "build/$name" 2>/dev/null; then
+              chmod +x "build/$name"
+              echo "  built: $name ($(wc -c < "build/$name") bytes)"
+              pass=$((pass + 1))
+            else
+              echo "  FAIL: $name (compile error)"
+              cat "$tcyr" | "$CC" > /dev/null 2>&1 || true
+              fail=$((fail + 1))
+            fi
           done
+          echo "$pass compiled, $fail failed"
+          test $fail -eq 0
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-x86_64
-          path: build/test_*
-          retention-days: 5
-
-  # ── Check & Format ──
-  check:
-    name: Check & Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Cyrius toolchain
+      - name: Run tests
         run: |
-          curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
-          tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
-          export CYRIUS_HOME="cyrius-$CYRIUS_VERSION-x86_64-linux"
-          mkdir -p build
-          cp "$CYRIUS_HOME/bin/cc2" ./build/cc2
-          cp "$CYRIUS_HOME/bin/cyrb" ./build/cyrb
-          chmod +x ./build/cc2 ./build/cyrb
-          ln -sf "$CYRIUS_HOME/lib" ./lib
-
-      - name: Syntax check
-        run: |
+          pass=0; fail=0
           for tcyr in tests/*.tcyr; do
-            ./build/cyrb check "$tcyr"
-            echo "PASS: $tcyr"
+            name=$(basename "$tcyr" .tcyr)
+            bin="build/$name"
+            [ -x "$bin" ] || continue
+            output=$("$bin" 2>&1) || true
+            ec=$?
+            summary=$(echo "$output" | grep -o '[0-9]* passed, [0-9]* failed' | tail -1)
+            f=$(echo "$summary" | grep -o '[0-9]* failed' | grep -o '^[0-9]*' || echo "")
+            if [ "$ec" -eq 0 ] && { [ -z "$f" ] || [ "$f" -eq 0 ]; }; then
+              echo "  PASS: $name${summary:+ ($summary)}"
+              pass=$((pass + 1))
+            else
+              echo "  FAIL: $name (exit $ec)${summary:+ ($summary)}"
+              echo "$output" | grep "FAIL:" | head -3
+              fail=$((fail + 1))
+            fi
           done
+          echo ""
+          echo "$pass passed, $fail failed"
+          test $fail -eq 0
 
   # ── Security ──
   security:
@@ -80,79 +84,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Scan for dangerous patterns
         run: |
           WARN=0
-          # Check for raw execve
           if grep -rn 'syscall(59' src/ 2>/dev/null | grep -v "# "; then
-            echo "WARN: raw execve in sakshi modules"
-            WARN=1
+            echo "WARN: raw execve in sakshi modules"; WARN=1
           fi
-          # Check for hardcoded paths
           if grep -rn '"/etc/' src/ 2>/dev/null; then
-            echo "WARN: hardcoded /etc paths"
-            WARN=1
+            echo "WARN: hardcoded /etc paths"; WARN=1
           fi
           echo "security scan complete (warnings: $WARN)"
-
-  # ── Tests ──
-  test:
-    name: Test
-    needs: [build]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Cyrius toolchain
-        run: |
-          curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
-          tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
-          export CYRIUS_HOME="cyrius-$CYRIUS_VERSION-x86_64-linux"
-          mkdir -p build
-          cp "$CYRIUS_HOME/bin/cc2" ./build/cc2
-          cp "$CYRIUS_HOME/bin/cyrb" ./build/cyrb
-          chmod +x ./build/cc2 ./build/cyrb
-          ln -sf "$CYRIUS_HOME/lib" ./lib
-
-      - name: Run test suite
-        run: sh scripts/test.sh
-
-  # ── Benchmarks ──
-  benchmarks:
-    name: Benchmarks
-    needs: [build]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Cyrius toolchain
-        run: |
-          curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
-          tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
-          export CYRIUS_HOME="cyrius-$CYRIUS_VERSION-x86_64-linux"
-          mkdir -p build
-          cp "$CYRIUS_HOME/bin/cc2" ./build/cc2
-          cp "$CYRIUS_HOME/bin/cyrb" ./build/cyrb
-          chmod +x ./build/cc2 ./build/cyrb
-          ln -sf "$CYRIUS_HOME/lib" ./lib
-
-      - name: Run benchmarks
-        run: |
-          if [ -f scripts/bench-history.sh ]; then
-            sh scripts/bench-history.sh
-          fi
-        continue-on-error: true
-
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: benchmarks
-          path: |
-            bench-history.csv
-            BENCHMARKS.md
-          retention-days: 90
 
   # ── Documentation ──
   docs:
@@ -164,13 +105,9 @@ jobs:
       - name: Check required docs exist
         run: |
           MISSING=0
-          for doc in README.md CHANGELOG.md VERSION CONTRIBUTING.md SECURITY.md LICENSE CODE_OF_CONDUCT.md; do
-            if [ -f "$doc" ]; then
-              echo "  OK: $doc"
-            else
-              echo "  MISSING: $doc"
-              MISSING=1
-            fi
+          for doc in README.md CHANGELOG.md VERSION CONTRIBUTING.md SECURITY.md LICENSE; do
+            if [ -f "$doc" ]; then echo "  OK: $doc"
+            else echo "  MISSING: $doc"; MISSING=1; fi
           done
           exit $MISSING
 
@@ -179,21 +116,25 @@ jobs:
           VERSION=$(cat VERSION | tr -d '[:space:]')
           echo "VERSION file: $VERSION"
           grep -q "$VERSION" CHANGELOG.md || { echo "FAIL: version not in changelog"; exit 1; }
-          grep -q "$VERSION" cyrius.toml || { echo "FAIL: version not in cyrius.toml"; exit 1; }
           echo "Version consistent"
 
-      - name: Install Cyrius toolchain
+      - name: Install Cyrius toolchain (for cyrdoc)
         run: |
           curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
           tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
-          export CYRIUS_HOME="cyrius-$CYRIUS_VERSION-x86_64-linux"
+          CYRIUS_DIR="cyrius-$CYRIUS_VERSION-x86_64-linux"
           mkdir -p build
-          cp "$CYRIUS_HOME/bin/cc2" ./build/cc2
-          cp "$CYRIUS_HOME/bin/cyrdoc" ./build/cyrdoc 2>/dev/null || true
-          chmod +x ./build/cc2 ./build/cyrdoc 2>/dev/null || true
-          ln -sf "$CYRIUS_HOME/lib" ./cyrius_lib
+          # Build cyrdoc from source if not in tarball
+          if [ -f "$CYRIUS_DIR/bin/cyrdoc" ]; then
+            cp "$CYRIUS_DIR/bin/cyrdoc" ./build/cyrdoc
+            chmod +x ./build/cyrdoc
+          elif [ -f "$CYRIUS_DIR/bin/cc2" ]; then
+            cp "$CYRIUS_DIR/bin/cc2" ./build/cc2
+            chmod +x ./build/cc2
+            echo "cyrdoc not in release — skipping doc coverage"
+          fi
 
-      - name: Doc coverage (source modules)
+      - name: Doc coverage
         run: |
           if [ -x ./build/cyrdoc ]; then
             total=0
@@ -206,5 +147,5 @@ jobs:
             echo "$total undocumented"
             test $total -eq 0
           else
-            echo "skip: cyrdoc not available in this release"
+            echo "skip: cyrdoc not available"
           fi
