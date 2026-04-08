@@ -1,5 +1,5 @@
 # test_sakshi.cyr — test program for sakshi
-# Exercises error codes, tracing, and spans.
+# Exercises error codes, tracing, spans, output targets, and ring buffer.
 
 include "src/lib.cyr"
 
@@ -36,6 +36,17 @@ fn test_errors() {
         return 1;
     }
 
+    # Test all categories pack/unpack correctly
+    var e2 = sakshi_err_new(ERR_TIMEOUT, ERR_CAT_NET);
+    if (sakshi_err_code(e2) != 5) {
+        sakshi_error("ERR_TIMEOUT code mismatch", 25);
+        return 1;
+    }
+    if (sakshi_err_category(e2) != 7) {
+        sakshi_error("ERR_CAT_NET category mismatch", 29);
+        return 1;
+    }
+
     sakshi_info("error tests passed", 18);
     return 0;
 }
@@ -44,7 +55,7 @@ fn test_errors() {
 # Trace tests
 # ================================================================
 fn test_trace() {
-    # Test all log levels
+    # Test all log levels at default (INFO)
     sakshi_error("this is an error", 16);
     sakshi_warn("this is a warning", 17);
     sakshi_info("this is info", 12);
@@ -93,6 +104,66 @@ fn test_spans() {
 }
 
 # ================================================================
+# Ring buffer tests
+# ================================================================
+fn test_ring_buffer() {
+    # Switch to buffer output
+    sakshi_output_buffer();
+
+    # Write a known message
+    sakshi_info("buffered message", 16);
+
+    # Verify something is in the ring buffer
+    if (sakshi_ring_len() == 0) {
+        # Can't use sakshi_error here — output goes to buffer
+        # Switch back to stderr to report
+        sakshi_set_output(SK_OUT_STDERR);
+        sakshi_error("ring buffer empty after write", 29);
+        return 1;
+    }
+
+    # Read it back
+    var readbuf[256];
+    var n = sakshi_ring_read(&readbuf, 256);
+    if (n == 0) {
+        sakshi_set_output(SK_OUT_STDERR);
+        sakshi_error("ring_read returned 0", 20);
+        return 1;
+    }
+
+    # Clear and verify
+    sakshi_ring_clear();
+    if (sakshi_ring_len() != 0) {
+        sakshi_set_output(SK_OUT_STDERR);
+        sakshi_error("ring not empty after clear", 26);
+        return 1;
+    }
+
+    # Switch back to stderr
+    sakshi_set_output(SK_OUT_STDERR);
+    sakshi_info("ring buffer tests passed", 24);
+    return 0;
+}
+
+# ================================================================
+# File output tests
+# ================================================================
+fn test_file_output() {
+    var fd = sakshi_output_file("/tmp/sakshi_test.log");
+    if (fd < 0) {
+        sakshi_error("failed to open test log file", 28);
+        return 1;
+    }
+
+    sakshi_info("file output test", 16);
+    sakshi_output_file_close();
+
+    # Verify we're back on stderr
+    sakshi_info("file output tests passed", 24);
+    return 0;
+}
+
+# ================================================================
 # Main
 # ================================================================
 fn main() {
@@ -101,8 +172,10 @@ fn main() {
     var r1 = test_errors();
     var r2 = test_trace();
     var r3 = test_spans();
+    var r4 = test_ring_buffer();
+    var r5 = test_file_output();
 
-    if (r1 == 0 && r2 == 0 && r3 == 0) {
+    if (r1 == 0 && r2 == 0 && r3 == 0 && r4 == 0 && r5 == 0) {
         sakshi_info("all tests passed", 16);
         return 0;
     }

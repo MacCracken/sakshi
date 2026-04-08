@@ -1,6 +1,6 @@
 # Sakshi Development Roadmap
 
-> **v0.1.0** — Scaffolded. First Cyrius-native crate.
+> **v0.2.0** — Config & all output targets implemented.
 
 ## v0.1.0 — Foundation
 
@@ -18,10 +18,10 @@
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | `#ref` TOML compile-time config (log level, output target) | Not started |
-| 2 | File output target | Not started |
-| 3 | Buffer output target (ring buffer for in-memory trace) | Not started |
-| 4 | Network output target (UDP) | Not started |
+| 1 | `#ref` TOML compile-time config (log level, output target) | Done |
+| 2 | File output target | Done |
+| 3 | Buffer output target (ring buffer for in-memory trace) | Done |
+| 4 | Network output target (UDP) | Done |
 
 ## v1.0.0 — Stable
 

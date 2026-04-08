@@ -20,7 +20,11 @@ sakshi
 Application code
   → sakshi_error() / sakshi_info() / sakshi_span_enter()
     → format (fixed buffer, no alloc)
-      → output target (serial / file / buffer / network)
+      → _sk_write() dispatcher
+        → stderr (default)
+        → file (append mode, opened by sakshi_output_file)
+        → ring buffer (4KB circular, in-memory)
+        → UDP (sendto, opened by sakshi_output_udp)
 ```
 
 ## Error Format
@@ -47,4 +51,4 @@ Every AGNOS Cyrius project. This is the first `include` in every crate.
 - Zero heap allocation on error/trace hot path
 - Compiled contribution: 2-3KB target
 - No external dependencies (this IS the foundation)
-- #ref TOML for compile-time config (log levels, output targets)
+- `#ref "sakshi.toml"` for compile-time config (log levels, output targets)

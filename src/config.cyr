@@ -1,3 +1,13 @@
 # config.cyr — compile-time configuration for sakshi
-# Placeholder for v0.2.0: #ref TOML config loading at compile time.
-# Will control: log level, output target, buffer sizes.
+# Loads sakshi.toml via #ref at compile time.
+# Consumers override defaults by defining sk_cfg_* vars before including lib.cyr,
+# or by placing their own sakshi.toml in the project root.
+
+#ref "sakshi.toml"
+
+# Apply compile-time config to runtime state.
+# Called once from lib.cyr initialization.
+fn _sk_apply_config() {
+    _sk_log_level = sk_cfg_log_level;
+    return 0;
+}

@@ -9,7 +9,11 @@
 #   Trace:  sakshi_error, sakshi_warn, sakshi_info, sakshi_debug, sakshi_trace,
 #           sakshi_set_level, sakshi_get_level
 #   Span:   sakshi_span_enter, sakshi_span_exit, sakshi_span_depth
-#   Output: sakshi_set_output_fd
+#   Output: sakshi_set_output_fd, sakshi_set_output,
+#           sakshi_output_file, sakshi_output_file_close,
+#           sakshi_output_buffer, sakshi_ring_read, sakshi_ring_len, sakshi_ring_clear,
+#           sakshi_output_udp, sakshi_output_udp_close, sakshi_ipv4
+#   Config: compile-time via #ref "sakshi.toml"
 
 # Internal helpers (format, output) first — other modules depend on them
 include "src/format.cyr"
@@ -19,4 +23,9 @@ include "src/output.cyr"
 include "src/error.cyr"
 include "src/trace.cyr"
 include "src/span.cyr"
+
+# Config last — applies compile-time values to runtime state
 include "src/config.cyr"
+
+# Apply compile-time configuration
+var _sk_init = _sk_apply_config();
