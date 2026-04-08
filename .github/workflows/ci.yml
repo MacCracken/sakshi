@@ -181,3 +181,30 @@ jobs:
           grep -q "$VERSION" CHANGELOG.md || { echo "FAIL: version not in changelog"; exit 1; }
           grep -q "$VERSION" cyrius.toml || { echo "FAIL: version not in cyrius.toml"; exit 1; }
           echo "Version consistent"
+
+      - name: Install Cyrius toolchain
+        run: |
+          curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
+          tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
+          export CYRIUS_HOME="cyrius-$CYRIUS_VERSION-x86_64-linux"
+          mkdir -p build
+          cp "$CYRIUS_HOME/bin/cc2" ./build/cc2
+          cp "$CYRIUS_HOME/bin/cyrdoc" ./build/cyrdoc 2>/dev/null || true
+          chmod +x ./build/cc2 ./build/cyrdoc 2>/dev/null || true
+          ln -sf "$CYRIUS_HOME/lib" ./cyrius_lib
+
+      - name: Doc coverage (source modules)
+        run: |
+          if [ -x ./build/cyrdoc ]; then
+            total=0
+            for f in src/*.cyr lib/sakshi.cyr lib/sakshi_full.cyr; do
+              [ -f "$f" ] || continue
+              u=$(./build/cyrdoc --check "$f" 2>&1 | tail -1 | grep -oP '(\d+) undocumented' | grep -oP '^\d+' || echo 0)
+              if [ "$u" -gt 0 ]; then echo "  $f: $u undocumented"; fi
+              total=$((total + u))
+            done
+            echo "$total undocumented"
+            test $total -eq 0
+          else
+            echo "skip: cyrdoc not available in this release"
+          fi

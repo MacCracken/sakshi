@@ -42,26 +42,31 @@ fn _sk_log(level, msg, msg_len) {
 
 # Public API — each takes a message string and its byte length
 
+# Log an error message to the configured output
 fn sakshi_error(msg, msg_len) {
     _sk_log(SK_ERROR, msg, msg_len);
     return 0;
 }
 
+# Log a warning message
 fn sakshi_warn(msg, msg_len) {
     _sk_log(SK_WARN, msg, msg_len);
     return 0;
 }
 
+# Log an info message
 fn sakshi_info(msg, msg_len) {
     _sk_log(SK_INFO, msg, msg_len);
     return 0;
 }
 
+# Log a debug message
 fn sakshi_debug(msg, msg_len) {
     _sk_log(SK_DEBUG, msg, msg_len);
     return 0;
 }
 
+# Log a trace message
 fn sakshi_trace(msg, msg_len) {
     _sk_log(SK_TRACE, msg, msg_len);
     return 0;
