@@ -33,16 +33,19 @@ jobs:
           chmod +x ./build/cc2 ./build/cyrb
           echo "Cyrius $CYRIUS_VERSION installed"
 
-      - name: Build test program
+      - name: Build tests
         run: |
-          ./build/cyrb build programs/test_sakshi.cyr build/test_sakshi
-          echo "test binary: $(wc -c < build/test_sakshi) bytes"
+          for tcyr in tests/*.tcyr; do
+            name=$(basename "$tcyr" .tcyr)
+            ./build/cyrb build "$tcyr" "build/$name"
+            echo "built: $name ($(wc -c < "build/$name") bytes)"
+          done
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-x86_64
-          path: build/test_sakshi
+          path: build/test_*
           retention-days: 5
 
   # ── Check & Format ──
@@ -64,8 +67,10 @@ jobs:
 
       - name: Syntax check
         run: |
-          ./build/cyrb check programs/test_sakshi.cyr
-          echo "PASS: syntax check"
+          for tcyr in tests/*.tcyr; do
+            ./build/cyrb check "$tcyr"
+            echo "PASS: $tcyr"
+          done
 
   # ── Security ──
   security:
@@ -108,15 +113,7 @@ jobs:
           chmod +x ./build/cc2 ./build/cyrb
 
       - name: Run test suite
-        run: |
-          if [ -f scripts/test.sh ]; then
-            sh scripts/test.sh
-          else
-            ./build/cyrb build programs/test_sakshi.cyr build/test_sakshi
-            ./build/test_sakshi 2>&1 | tee /tmp/test_output
-            grep -q "all tests passed" /tmp/test_output
-            echo "PASS: all tests"
-          fi
+        run: sh scripts/test.sh
 
   # ── Benchmarks ──
   benchmarks:

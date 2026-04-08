@@ -45,11 +45,7 @@ jobs:
           chmod +x ./build/cc2 ./build/cyrb
 
       - name: Build and run tests
-        run: |
-          ./build/cyrb build programs/test_sakshi.cyr build/test_sakshi
-          ./build/test_sakshi 2>&1 | tee /tmp/test_output
-          grep -q "all tests passed" /tmp/test_output
-          echo "PASS: release test"
+        run: sh scripts/test.sh
 
       - name: Extract changelog
         run: |
