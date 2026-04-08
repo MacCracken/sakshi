@@ -1,44 +1,63 @@
 # Sakshi Development Roadmap
 
-> **v0.5.0** — All pre-1.0 implementation complete. Zero-alloc tracing, error handling, 4 output targets, binary events, timestamps.
+> **v0.5.0** released. Dual-profile distribution, CI/release pipeline, 12 tests passing.
 
-## v0.5.0 — Complete Pre-1.0 Implementation
+## v0.5.0 — Released
 
-All items from v0.1.0 through v0.3.0 shipped as a single release.
-
-### Foundation (originally v0.1.0)
+### Core
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Packed i64 error format (code + category + context) | Done |
-| 2 | 8 error categories (syscall, io, parse, config, runtime, alloc, net, auth) | Done |
-| 3 | Log levels (error, warn, info, debug, trace) | Done |
-| 4 | Fixed-buffer formatted output | Done |
-| 5 | Stderr output target | Done |
-| 6 | Basic span enter/exit with timing | Done |
-| 7 | Test program in programs/ | Done |
+| 1 | Packed i64 error format: `[context:32][category:16][code:16]` | Done |
+| 2 | Input validation — category/context masked to prevent field overflow | Done |
+| 3 | 8 error categories, 8 common error codes (enums) | Done |
+| 4 | 5 log levels (error/warn/info/debug/trace) with runtime filtering | Done |
+| 5 | Monotonic nanosecond timestamps on all events | Done |
+| 6 | Fixed-buffer text formatting (`[timestamp] [LEVEL] msg\n`) | Done |
 
-### Config & Targets (originally v0.2.0)
+### Output Targets
+
+| # | Item | Profile | Status |
+|---|------|---------|--------|
+| 1 | Stderr (default) | slim + full | Done |
+| 2 | File (append mode, tee in slim, exclusive in full) | slim + full | Done |
+| 3 | Ring buffer (4KB, binary events, power-of-2 bitmask, overwrite-oldest) | full | Done |
+| 4 | UDP (binary events via sendto) | full | Done |
+| 5 | Binary event format (12-byte header + msg), `sakshi_ring_decode_event` | full | Done |
+| 6 | Unified `_sk_emit` dispatcher (binary vs text by target) | full | Done |
+
+### Spans (full profile only)
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | `#ref` TOML compile-time config (log level, output target) | Done |
-| 2 | File output target | Done |
-| 3 | Buffer output target (ring buffer for in-memory trace) | Done |
-| 4 | Network output target (UDP) | Done |
+| 1 | `sakshi_span_enter` / `sakshi_span_exit` with nanosecond timing | Done |
+| 2 | 16-deep fixed span stack (384 bytes, no heap) | Done |
+| 3 | `sakshi_err_at_span` — error-to-span correlation via context field | Done |
 
-### P(-1) Research Hardening (originally v0.3.0)
+### Distribution
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Monotonic timestamps on all trace events | Done |
-| 2 | Binary event format for ring buffer (12-byte header + msg) | Done |
-| 3 | Binary event format for UDP (same wire format) | Done |
-| 4 | Power-of-2 bitmask ring buffer (`& 0xFFF` vs `%`) | Done |
-| 5 | Error context field in upper 32 bits (span ID, source hash) | Done |
-| 6 | `sakshi_err_with_ctx` / `sakshi_err_context` / `sakshi_err_at_span` | Done |
-| 7 | `sakshi_ring_decode_event` for binary-to-text conversion | Done |
-| 8 | Unified `_sk_emit` dispatcher (binary vs text by target) | Done |
+| 1 | `sakshi.cyr` — slim stderr profile (4 globals, 0 arrays) | Done |
+| 2 | `sakshi_full.cyr` — full profile (spans, ring buffer, UDP) | Done |
+| 3 | `src/*.cyr` — modular source (7 files) | Done |
+| 4 | `#ref "sakshi.toml"` compile-time config in modular source | Done |
+
+### CI/Release
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | GitHub Actions CI (build, check, security, test, benchmarks, docs) | Done |
+| 2 | GitHub Actions release (CI gate, source archive, SHA256, changelog extract) | Done |
+| 3 | `scripts/test.sh` — auto-discover .tcyr, auto-find cyrb | Done |
+| 4 | `scripts/version-bump.sh` — atomic VERSION/cyrius.toml/CHANGELOG update | Done |
+| 5 | Stdlib `lib/` symlink pattern (gitignored, CI creates per-job) | Done |
+
+### Tests
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | Slim profile .tcyr test suite (12 assertions) | Done |
 
 ---
 
@@ -46,23 +65,23 @@ All items from v0.1.0 through v0.3.0 shipped as a single release.
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Slim profile .tcyr test suite | Done |
-| 2 | Full profile .tcyr test suite (ring buffer, spans, UDP) | Not started |
-| 3 | .bcyr benchmarks (Cyrius v2.0) | Not started |
+| 1 | Full profile .tcyr test suite (ring buffer, spans, UDP, binary decode) | Not started |
+| 2 | .bcyr benchmarks (err_new 6ns, trace_info 1us, filtered 7ns) | Done |
 | 3 | Integration tested across 3+ consumer crates | Not started |
-| 4 | Vidya entry for sakshi usage patterns | Not started |
+| 4 | Vidya entry for sakshi usage patterns | Done |
+| 5 | Resolve Cyrius bug #16 (enum data section shift) or confirm var workaround permanent | Not started |
 
 ---
 
-## Post-v1.0 — Blocked on Cyrius Compiler (post-2.2.0)
+## Post-v1.0 — Blocked on Cyrius Compiler
 
 Items from P(-1) research that require compiler features not yet available.
 
 | # | Item | Requires | Source |
 |---|------|----------|--------|
-| 1 | Compile-time log level elimination (dead code removal for disabled levels) | `#if` value-comparison directive (not just `#ifdef`) | Rust `log`, Linux kernel `#if` |
-| 2 | Deferred formatting — store string ID + raw args, decode externally | Compiler string interning (ELF section for format strings) | Embedded Rust defmt |
-| 3 | Per-module log levels (module ID → level threshold table) | Module identity / ID system in Cyrius | LTTng, Tokio tracing |
-| 4 | Per-CPU ring buffers (eliminate SMP contention) | Multi-core / CPU-affinity primitives | Linux ftrace |
-| 5 | rdtsc/CNTVCT_EL0 direct cycle counter timestamps | Bare-metal TSC access + calibration | ftrace, LTTng |
-| 6 | Structured typed fields (fixed 4-slot key-value per event) | May benefit from generics or compile-time field layout | OTel, Tokio tracing |
+| 1 | Compile-time log level elimination | `#if` value-comparison directive | Rust `log`, Linux kernel |
+| 2 | Deferred formatting (string ID + raw args) | Compiler string interning | Embedded Rust defmt |
+| 3 | Per-module log levels | Module identity system | LTTng, Tokio tracing |
+| 4 | Per-CPU ring buffers | CPU-affinity primitives | Linux ftrace |
+| 5 | rdtsc/CNTVCT_EL0 cycle counter timestamps | Bare-metal TSC access | ftrace, LTTng |
+| 6 | Structured typed fields (key-value per event) | Generics or compile-time layout | OTel, Tokio tracing |

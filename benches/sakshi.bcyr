@@ -1,0 +1,97 @@
+# Bench: sakshi core operations
+# Measures: error packing, trace emit, log level filtering
+include "lib/string.cyr"
+include "lib/fmt.cyr"
+include "lib/alloc.cyr"
+include "lib/fnptr.cyr"
+include "lib/bench.cyr"
+
+include "sakshi.cyr"
+
+alloc_init();
+
+# ================================================================
+# Error packing — pure arithmetic, should be ~1-3ns
+# ================================================================
+
+fn bench_err_new() {
+    var e = sakshi_err_new(ERR_NOT_FOUND, ERR_CAT_IO);
+    return 0;
+}
+
+fn bench_err_with_ctx() {
+    var e = sakshi_err_with_ctx(ERR_TIMEOUT, ERR_CAT_NET, 0xDEAD);
+    return 0;
+}
+
+fn bench_err_unpack() {
+    var e = sakshi_err_with_ctx(ERR_BUSY, ERR_CAT_RUNTIME, 42);
+    var c = sakshi_err_code(e);
+    var k = sakshi_err_category(e);
+    var x = sakshi_err_context(e);
+    return 0;
+}
+
+# ================================================================
+# Trace emit — timestamp + format + syscall write
+# ================================================================
+
+# Redirect to /dev/null so write doesn't dominate
+fn bench_trace_info() {
+    sakshi_info("bench msg", 9);
+    return 0;
+}
+
+fn bench_trace_filtered() {
+    # SK_DEBUG = 3, default level = SK_INFO = 2, so this is filtered out
+    sakshi_debug("filtered", 8);
+    return 0;
+}
+
+# ================================================================
+# Timestamp — clock_gettime overhead
+# ================================================================
+
+fn bench_timestamp() {
+    var t = _sk_now_ns();
+    return 0;
+}
+
+# ================================================================
+# Run benchmarks
+# ================================================================
+
+println("=== sakshi benchmarks ===");
+
+# Redirect trace output to /dev/null for write benchmarks
+var devnull = syscall(2, "/dev/null", 1, 0);
+if (devnull >= 0) { sakshi_set_output_fd(devnull); }
+
+var b1 = bench_new("err_new");
+bench_run_batch(b1, &bench_err_new, 10000, 100);
+bench_report(b1);
+
+var b2 = bench_new("err_with_ctx");
+bench_run_batch(b2, &bench_err_with_ctx, 10000, 100);
+bench_report(b2);
+
+var b3 = bench_new("err_unpack");
+bench_run_batch(b3, &bench_err_unpack, 10000, 100);
+bench_report(b3);
+
+var b4 = bench_new("timestamp");
+bench_run_batch(b4, &bench_timestamp, 10000, 100);
+bench_report(b4);
+
+var b5 = bench_new("trace_info");
+bench_run_batch(b5, &bench_trace_info, 10000, 100);
+bench_report(b5);
+
+var b6 = bench_new("trace_filtered");
+bench_run_batch(b6, &bench_trace_filtered, 10000, 100);
+bench_report(b6);
+
+# Cleanup
+if (devnull >= 0) { syscall(3, devnull); }
+
+var x = 0;
