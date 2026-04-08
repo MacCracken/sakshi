@@ -4,14 +4,16 @@
 # Usage: include "sakshi/src/lib.cyr"
 #
 # Provides:
-#   Error:  sakshi_err_new, sakshi_err_code, sakshi_err_category,
+#   Error:  sakshi_err_new, sakshi_err_with_ctx, sakshi_err_at_span,
+#           sakshi_err_code, sakshi_err_category, sakshi_err_context,
 #           sakshi_is_err, sakshi_is_ok
 #   Trace:  sakshi_error, sakshi_warn, sakshi_info, sakshi_debug, sakshi_trace,
 #           sakshi_set_level, sakshi_get_level
 #   Span:   sakshi_span_enter, sakshi_span_exit, sakshi_span_depth
 #   Output: sakshi_set_output_fd, sakshi_set_output,
 #           sakshi_output_file, sakshi_output_file_close,
-#           sakshi_output_buffer, sakshi_ring_read, sakshi_ring_len, sakshi_ring_clear,
+#           sakshi_output_buffer, sakshi_ring_read_raw, sakshi_ring_len,
+#           sakshi_ring_clear, sakshi_ring_event_count, sakshi_ring_decode_event,
 #           sakshi_output_udp, sakshi_output_udp_close, sakshi_ipv4
 #   Config: compile-time via #ref "sakshi.toml"
 

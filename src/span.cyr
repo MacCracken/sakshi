@@ -1,55 +1,40 @@
 # span.cyr — enter/exit function tracking with timing
-# Uses clock_gettime(CLOCK_MONOTONIC_RAW) for nanosecond precision.
+# Uses _sk_now_ns() from format.cyr for nanosecond precision.
+# Routes through _sk_emit_span: binary for buffer/UDP, text for stderr/file.
 # Fixed-depth span stack — no heap allocation.
-# Depends: format.cyr, output.cyr (included via lib.cyr)
-
-# clock_gettime syscall number (x86_64)
-var _SK_SYS_CLOCK_GETTIME = 228;
-var _SK_CLOCK_MONOTONIC_RAW = 4;
-
-# Get monotonic nanoseconds
-fn _sk_now_ns() {
-    var ts[2];
-    syscall(_SK_SYS_CLOCK_GETTIME, _SK_CLOCK_MONOTONIC_RAW, &ts);
-    return load64(&ts) * 1000000000 + load64(&ts + 8);
-}
+# Depends: format.cyr, output.cyr, trace.cyr (included via lib.cyr)
 
 # Span stack — fixed depth of 16.
-# Each entry: { name_ptr: i64, start_ns: i64 } = 16 bytes
-# Total: 16 * 16 = 256 bytes
-var _sk_span_stack[256];
+# Each entry: { name_ptr: i64, name_len: i64, start_ns: i64 } = 24 bytes
+# Total: 16 * 24 = 384 bytes
+var _sk_span_stack[384];
 var _sk_span_depth: i64 = 0;
 var _SK_MAX_SPANS = 16;
 
 # Enter a span — push name + timestamp onto the stack
 fn sakshi_span_enter(name, name_len) {
     if (_sk_span_depth >= _SK_MAX_SPANS) { return 0; }
-    var offset = _sk_span_depth * 16;
+    var offset = _sk_span_depth * 24;
     store64(&_sk_span_stack + offset, name);
-    store64(&_sk_span_stack + offset + 8, _sk_now_ns());
+    store64(&_sk_span_stack + offset + 8, name_len);
+    store64(&_sk_span_stack + offset + 16, _sk_now_ns());
     _sk_span_depth = _sk_span_depth + 1;
 
-    # Log the enter event
-    var buf[256];
-    var len = _sk_fmt_span(&buf, 256, "ENTER", 5, name, name_len, 0);
-    _sk_write(&buf, len);
+    _sk_emit_span(SK_SPAN_ENTER, "ENTER", 5, name, name_len, 0);
     return 0;
 }
 
-# Exit the current span — pop, compute elapsed, log
+# Exit the current span — pop, compute elapsed, emit
 fn sakshi_span_exit() {
     if (_sk_span_depth <= 0) { return 0; }
     _sk_span_depth = _sk_span_depth - 1;
-    var offset = _sk_span_depth * 16;
+    var offset = _sk_span_depth * 24;
     var name = load64(&_sk_span_stack + offset);
-    var start = load64(&_sk_span_stack + offset + 8);
+    var name_len = load64(&_sk_span_stack + offset + 8);
+    var start = load64(&_sk_span_stack + offset + 16);
     var elapsed = _sk_now_ns() - start;
 
-    # Log the exit event with elapsed time
-    var name_len = _sk_strlen(name);
-    var buf[256];
-    var len = _sk_fmt_span(&buf, 256, "EXIT", 4, name, name_len, elapsed);
-    _sk_write(&buf, len);
+    _sk_emit_span(SK_SPAN_EXIT, "EXIT", 4, name, name_len, elapsed);
     return elapsed;
 }
 

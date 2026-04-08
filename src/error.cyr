@@ -1,5 +1,6 @@
 # error.cyr — packed i64 error codes for sakshi
-# Format: [63:32 reserved] [31:16 category] [15:0 error code]
+# Format: [63:32 context] [31:16 category] [15:0 error code]
+# Context: source location hash, span depth, or caller-defined value.
 # Zero allocation. Single OR + shift to create, single AND + shift to extract.
 
 # Error categories
@@ -27,9 +28,15 @@ enum ErrCode {
     ERR_BUSY        = 7;
 }
 
-# Pack an error code + category into a single i64
+# Pack an error code + category into a single i64 (context = 0)
 fn sakshi_err_new(code, category) {
     return (category << 16) | (code & 0xFFFF);
+}
+
+# Pack an error code + category + context into a single i64
+# context: 32-bit value stored in upper bits (source hash, span ID, etc.)
+fn sakshi_err_with_ctx(code, category, context) {
+    return (context << 32) | (category << 16) | (code & 0xFFFF);
 }
 
 # Extract the error code (bits 0-15)
@@ -42,6 +49,11 @@ fn sakshi_err_category(err) {
     return (err >> 16) & 0xFFFF;
 }
 
+# Extract the context (bits 32-63)
+fn sakshi_err_context(err) {
+    return (err >> 32) & 0xFFFFFFFF;
+}
+
 # Check if a value is an error (non-zero)
 fn sakshi_is_err(err) {
     if (err != 0) { return 1; }
@@ -52,4 +64,10 @@ fn sakshi_is_err(err) {
 fn sakshi_is_ok(err) {
     if (err == 0) { return 1; }
     return 0;
+}
+
+# Create an error with the current span depth as context.
+# Links errors to the active trace span for correlation.
+fn sakshi_err_at_span(code, category) {
+    return sakshi_err_with_ctx(code, category, sakshi_span_depth());
 }

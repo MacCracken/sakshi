@@ -2,6 +2,10 @@
 # Zero-dep: inlined string/memory primitives needed by trace and span modules.
 # No heap allocation. Fixed buffers only.
 
+# ================================================================
+# Primitives
+# ================================================================
+
 # Length of null-terminated string
 fn _sk_strlen(s) {
     var n: i64 = 0;
@@ -25,6 +29,25 @@ fn _sk_memset(dst, val, n) {
     return dst;
 }
 
+# ================================================================
+# Timestamp
+# ================================================================
+
+# clock_gettime constants (x86_64 Linux)
+var _SK_SYS_CLOCK_GETTIME = 228;
+var _SK_CLOCK_MONOTONIC_RAW = 4;
+
+# Get monotonic nanoseconds
+fn _sk_now_ns() {
+    var ts[2];
+    syscall(_SK_SYS_CLOCK_GETTIME, _SK_CLOCK_MONOTONIC_RAW, &ts);
+    return load64(&ts) * 1000000000 + load64(&ts + 8);
+}
+
+# ================================================================
+# Integer formatting
+# ================================================================
+
 # Convert integer to decimal string in buffer, return length written.
 # Buffer must be at least 24 bytes.
 fn _sk_fmt_int(n, buf) {
@@ -43,35 +66,56 @@ fn _sk_fmt_int(n, buf) {
     return len;
 }
 
-# Format a trace line into buf: "[LEVEL] msg"
-# Returns bytes written. Does not null-terminate (caller adds newline).
-# level_str: pointer to level tag e.g. "ERROR", level_len: its length
-# msg: message string, msg_len: its length
+# ================================================================
+# Internal: write an integer into buf at pos, respecting cap. Returns new pos.
+# ================================================================
+fn _sk_write_int(buf, pos, cap, val) {
+    var tmp[24];
+    var tlen = _sk_fmt_int(val, &tmp);
+    var ti = 0;
+    while (ti < tlen && pos < cap) {
+        store8(buf + pos, load8(&tmp + ti));
+        pos = pos + 1;
+        ti = ti + 1;
+    }
+    return pos;
+}
+
+# Internal: write a string into buf at pos, respecting cap. Returns new pos.
+fn _sk_write_str(buf, pos, cap, s, slen) {
+    var wi = 0;
+    while (wi < slen && pos < cap) {
+        store8(buf + pos, load8(s + wi));
+        pos = pos + 1;
+        wi = wi + 1;
+    }
+    return pos;
+}
+
+# ================================================================
+# Text line formatters (for stderr/file targets)
+# ================================================================
+
+# Format a trace line: "[timestamp] [LEVEL] msg\n"
+# Returns bytes written.
 fn _sk_fmt_line(buf, cap, level_str, level_len, msg, msg_len) {
     var pos: i64 = 0;
+    var ts = _sk_now_ns();
 
-    # [
+    # [timestamp]
     if (pos < cap) { store8(buf + pos, 91); pos = pos + 1; }
+    pos = _sk_write_int(buf, pos, cap, ts);
+    if (pos < cap) { store8(buf + pos, 93); pos = pos + 1; }
+    if (pos < cap) { store8(buf + pos, 32); pos = pos + 1; }
 
-    # level tag
-    var li = 0;
-    while (li < level_len && pos < cap) {
-        store8(buf + pos, load8(level_str + li));
-        pos = pos + 1;
-        li = li + 1;
-    }
-
-    # ] + space
+    # [LEVEL]
+    if (pos < cap) { store8(buf + pos, 91); pos = pos + 1; }
+    pos = _sk_write_str(buf, pos, cap, level_str, level_len);
     if (pos < cap) { store8(buf + pos, 93); pos = pos + 1; }
     if (pos < cap) { store8(buf + pos, 32); pos = pos + 1; }
 
     # message
-    var mi = 0;
-    while (mi < msg_len && pos < cap) {
-        store8(buf + pos, load8(msg + mi));
-        pos = pos + 1;
-        mi = mi + 1;
-    }
+    pos = _sk_write_str(buf, pos, cap, msg, msg_len);
 
     # newline
     if (pos < cap) { store8(buf + pos, 10); pos = pos + 1; }
@@ -79,46 +123,32 @@ fn _sk_fmt_line(buf, cap, level_str, level_len, msg, msg_len) {
     return pos;
 }
 
-# Format a span line: "[SPAN] name (elapsed_ns ns)"
+# Format a span line: "[timestamp] [ACTION] name (elapsed ns)\n"
 # Returns bytes written.
 fn _sk_fmt_span(buf, cap, action, action_len, name, name_len, elapsed_ns) {
     var pos: i64 = 0;
+    var ts = _sk_now_ns();
 
-    # [SPAN]
+    # [timestamp]
     if (pos < cap) { store8(buf + pos, 91); pos = pos + 1; }
-    var si = 0;
-    while (si < action_len && pos < cap) {
-        store8(buf + pos, load8(action + si));
-        pos = pos + 1;
-        si = si + 1;
-    }
+    pos = _sk_write_int(buf, pos, cap, ts);
+    if (pos < cap) { store8(buf + pos, 93); pos = pos + 1; }
+    if (pos < cap) { store8(buf + pos, 32); pos = pos + 1; }
+
+    # [ACTION]
+    if (pos < cap) { store8(buf + pos, 91); pos = pos + 1; }
+    pos = _sk_write_str(buf, pos, cap, action, action_len);
     if (pos < cap) { store8(buf + pos, 93); pos = pos + 1; }
     if (pos < cap) { store8(buf + pos, 32); pos = pos + 1; }
 
     # name
-    var ni = 0;
-    while (ni < name_len && pos < cap) {
-        store8(buf + pos, load8(name + ni));
-        pos = pos + 1;
-        ni = ni + 1;
-    }
+    pos = _sk_write_str(buf, pos, cap, name, name_len);
 
     # elapsed if provided (> 0)
     if (elapsed_ns > 0) {
-        # " ("
         if (pos < cap) { store8(buf + pos, 32); pos = pos + 1; }
         if (pos < cap) { store8(buf + pos, 40); pos = pos + 1; }
-
-        # format elapsed
-        var tmp[24];
-        var tlen = _sk_fmt_int(elapsed_ns, &tmp);
-        var ti = 0;
-        while (ti < tlen && pos < cap) {
-            store8(buf + pos, load8(&tmp + ti));
-            pos = pos + 1;
-            ti = ti + 1;
-        }
-
+        pos = _sk_write_int(buf, pos, cap, elapsed_ns);
         # "ns)"
         if (pos < cap) { store8(buf + pos, 110); pos = pos + 1; }
         if (pos < cap) { store8(buf + pos, 115); pos = pos + 1; }
@@ -129,4 +159,36 @@ fn _sk_fmt_span(buf, cap, action, action_len, name, name_len, elapsed_ns) {
     if (pos < cap) { store8(buf + pos, 10); pos = pos + 1; }
 
     return pos;
+}
+
+# ================================================================
+# Binary event format (for ring buffer / UDP targets)
+# ================================================================
+# Layout (12 bytes):
+#   [0:7]  timestamp_ns  (u64)  — monotonic nanoseconds
+#   [8]    level         (u8)   — log level enum value
+#   [9]    category      (u8)   — error category or 0
+#   [10:11] msg_len      (u16)  — length of following message bytes
+# Followed by msg_len bytes of message data (variable length).
+# Total event size: 12 + msg_len
+
+var _SK_BIN_HDR_SIZE = 12;
+
+# Write a binary event header into buf. Returns header size (12).
+fn _sk_bin_write_hdr(buf, timestamp, level, category, msg_len) {
+    store64(buf, timestamp);
+    store8(buf + 8, level);
+    store8(buf + 9, category);
+    store16(buf + 10, msg_len);
+    return _SK_BIN_HDR_SIZE;
+}
+
+# Read a binary event header from buf. Returns fields via out pointers.
+# out_ts, out_level, out_cat, out_msg_len are pointers to i64.
+fn _sk_bin_read_hdr(buf, out_ts, out_level, out_cat, out_msg_len) {
+    store64(out_ts, load64(buf));
+    store64(out_level, load8(buf + 8));
+    store64(out_cat, load8(buf + 9));
+    store64(out_msg_len, load16(buf + 10));
+    return _SK_BIN_HDR_SIZE;
 }

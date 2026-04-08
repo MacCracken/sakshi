@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  push:
+    tags: ['*']
+
+permissions:
+  contents: write
+
+env:
+  CYRIUS_VERSION: "2.0.0"
+
+jobs:
+  # ── CI Gate (must pass before release) ──
+  ci:
+    name: CI Gate
+    uses: ./.github/workflows/ci.yml
+
+  # ── Build release artifacts ──
+  build:
+    name: Build Release
+    needs: [ci]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify version consistency
+        run: |
+          FILE_VERSION=$(cat VERSION | tr -d '[:space:]')
+          TAG_VERSION="${GITHUB_REF_NAME}"
+          if [ "$FILE_VERSION" != "$TAG_VERSION" ]; then
+            echo "ERROR: VERSION ($FILE_VERSION) != tag ($TAG_VERSION)"
+            exit 1
+          fi
+          echo "Version verified: $TAG_VERSION"
+
+      - name: Install Cyrius toolchain
+        run: |
+          curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
+          tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
+          export CYRIUS_HOME="cyrius-$CYRIUS_VERSION-x86_64-linux"
+          mkdir -p build
+          cp "$CYRIUS_HOME/bin/cc2" ./build/cc2
+          cp "$CYRIUS_HOME/bin/cyrb" ./build/cyrb
+          chmod +x ./build/cc2 ./build/cyrb
+
+      - name: Build and run tests
+        run: |
+          ./build/cyrb build programs/test_sakshi.cyr build/test_sakshi
+          ./build/test_sakshi 2>&1 | tee /tmp/test_output
+          grep -q "all tests passed" /tmp/test_output
+          echo "PASS: release test"
+
+      - name: Extract changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          BODY=$(awk "/^## \\[$VERSION\\]/{found=1; next} /^## \\[/{if(found) exit} found{print}" CHANGELOG.md)
+          if [ -z "$BODY" ]; then
+            BODY="No changelog entry for this release."
+          fi
+          echo "$BODY" > /tmp/release-body.md
+
+      - name: Create source archive
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          git archive --format=tar.gz --prefix="sakshi-${TAG}/" -o "sakshi-${TAG}-src.tar.gz" HEAD
+
+      - name: Generate checksums
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          sha256sum "sakshi-${TAG}-src.tar.gz" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            sakshi-*-src.tar.gz
+            SHA256SUMS
+          retention-days: 5
+
+  # ── Create GitHub Release ──
+  release:
+    name: Create GitHub Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+
+      - name: Extract changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          BODY=$(awk "/^## \\[$VERSION\\]/{found=1; next} /^## \\[/{if(found) exit} found{print}" CHANGELOG.md)
+          if [ -z "$BODY" ]; then
+            BODY="No changelog entry for this release."
+          fi
+          echo "$BODY" > /tmp/release-body.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "sakshi ${{ github.ref_name }}"
+          body_path: /tmp/release-body.md
+          prerelease: ${{ startsWith(github.ref_name, '0.') }}
+          files: |
+            sakshi-${{ github.ref_name }}-src.tar.gz
+            SHA256SUMS

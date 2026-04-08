@@ -1,7 +1,7 @@
 # output.cyr — output targets for sakshi
-# Supports: stderr (default), file, ring buffer, UDP network.
+# Supports: stderr (default), file, ring buffer (binary), UDP (binary).
 # Target selection via sk_cfg_output_target from config.cyr.
-# Depends: format.cyr (for _sk_memcpy)
+# Depends: format.cyr (for _sk_memcpy, _sk_now_ns, _sk_bin_write_hdr)
 
 # Output target constants
 enum OutputTarget {
@@ -15,7 +15,7 @@ enum OutputTarget {
 var _sk_output_target = 0;
 
 # ================================================================
-# Stderr target (default)
+# Stderr target (default) — text format
 # ================================================================
 var _sk_stderr_fd = 2;
 
@@ -25,9 +25,8 @@ fn _sk_write_stderr(buf, len) {
 }
 
 # ================================================================
-# File target
+# File target — text format
 # ================================================================
-# File fd — opened by sakshi_output_file()
 var _sk_file_fd: i64 = 0 - 1;
 
 # Open a file for append-mode logging. Returns fd or negative on error.
@@ -59,13 +58,15 @@ fn _sk_write_file(buf, len) {
 }
 
 # ================================================================
-# Ring buffer target — fixed-size circular buffer, no heap
+# Ring buffer target — binary events, power-of-2, overwrite-oldest
 # ================================================================
-# 4KB default ring buffer (overridable via sk_cfg_ring_buf_size)
+# 4KB ring buffer. Power-of-2 for bitmask indexing (& 0xFFF).
+# Binary event format: 12-byte header + message bytes.
+# Overwrite-oldest policy (flight recorder pattern).
 var _sk_ring_buf[4096];
-var _sk_ring_head: i64 = 0;
-var _sk_ring_len: i64 = 0;
-var _sk_ring_cap: i64 = 4096;
+var _sk_ring_write: i64 = 0;
+var _sk_ring_count: i64 = 0;
+var _SK_RING_MASK = 0xFFF;
 
 # Enable ring buffer output
 fn sakshi_output_buffer() {
@@ -73,51 +74,135 @@ fn sakshi_output_buffer() {
     return 0;
 }
 
-# Write into ring buffer, wrapping at capacity
-fn _sk_write_ring(buf, len) {
-    var wi = 0;
-    while (wi < len) {
-        var pos = (_sk_ring_head + _sk_ring_len) % _sk_ring_cap;
-        store8(&_sk_ring_buf + pos, load8(buf + wi));
-        if (_sk_ring_len < _sk_ring_cap) {
-            _sk_ring_len = _sk_ring_len + 1;
-        } else {
-            # Buffer full — advance head (overwrite oldest)
-            _sk_ring_head = (_sk_ring_head + 1) % _sk_ring_cap;
-        }
-        wi = wi + 1;
-    }
+# Write a single byte into the ring buffer, advancing the write cursor
+fn _sk_ring_put(byte) {
+    store8(&_sk_ring_buf + (_sk_ring_write & _SK_RING_MASK), byte);
+    _sk_ring_write = _sk_ring_write + 1;
     return 0;
 }
 
-# Read up to max_len bytes from ring buffer into dst. Returns bytes read.
-# Reads from oldest to newest. Does not consume — use sakshi_ring_clear to reset.
-fn sakshi_ring_read(dst, max_len) {
-    var to_read = _sk_ring_len;
-    if (to_read > max_len) { to_read = max_len; }
-    var ri = 0;
-    while (ri < to_read) {
-        var pos = (_sk_ring_head + ri) % _sk_ring_cap;
-        store8(dst + ri, load8(&_sk_ring_buf + pos));
-        ri = ri + 1;
+# Write a binary event into the ring buffer.
+# level: log level, category: error category (0 for trace events)
+# msg: message pointer, msg_len: message length
+fn _sk_write_ring_event(level, category, msg, msg_len) {
+    var ts = _sk_now_ns();
+
+    # Write 12-byte binary header byte-by-byte into ring
+    # Timestamp (8 bytes, little-endian)
+    _sk_ring_put(ts & 0xFF);
+    _sk_ring_put((ts >> 8) & 0xFF);
+    _sk_ring_put((ts >> 16) & 0xFF);
+    _sk_ring_put((ts >> 24) & 0xFF);
+    _sk_ring_put((ts >> 32) & 0xFF);
+    _sk_ring_put((ts >> 40) & 0xFF);
+    _sk_ring_put((ts >> 48) & 0xFF);
+    _sk_ring_put((ts >> 56) & 0xFF);
+
+    # Level (1 byte)
+    _sk_ring_put(level & 0xFF);
+
+    # Category (1 byte)
+    _sk_ring_put(category & 0xFF);
+
+    # Message length (2 bytes, little-endian)
+    _sk_ring_put(msg_len & 0xFF);
+    _sk_ring_put((msg_len >> 8) & 0xFF);
+
+    # Message bytes
+    var mi = 0;
+    while (mi < msg_len) {
+        _sk_ring_put(load8(msg + mi));
+        mi = mi + 1;
     }
-    return to_read;
+
+    _sk_ring_count = _sk_ring_count + 1;
+    return 0;
 }
 
-# Get current number of bytes in the ring buffer
+# Read raw ring buffer bytes into dst. Returns bytes read.
+# Reads the most recent data (up to 4096 bytes).
+fn sakshi_ring_read_raw(dst, max_len) {
+    var avail = _sk_ring_write;
+    if (avail > 4096) { avail = 4096; }
+    if (avail > max_len) { avail = max_len; }
+    var start = _sk_ring_write - avail;
+    var ri = 0;
+    while (ri < avail) {
+        store8(dst + ri, load8(&_sk_ring_buf + ((start + ri) & _SK_RING_MASK)));
+        ri = ri + 1;
+    }
+    return avail;
+}
+
+# Get the number of events written to the ring buffer
+fn sakshi_ring_event_count() {
+    return _sk_ring_count;
+}
+
+# Get the number of bytes used in the ring buffer (capped at 4096)
 fn sakshi_ring_len() {
-    return _sk_ring_len;
+    if (_sk_ring_write > 4096) { return 4096; }
+    return _sk_ring_write;
 }
 
 # Clear the ring buffer
 fn sakshi_ring_clear() {
-    _sk_ring_head = 0;
-    _sk_ring_len = 0;
+    _sk_ring_write = 0;
+    _sk_ring_count = 0;
     return 0;
 }
 
+# Decode one binary event from buf into a text line in dst.
+# Returns total bytes consumed from buf (header + msg), or 0 if not enough data.
+# Writes text "[timestamp] [LEVEL] msg\n" into dst, returns text len via out_text_len ptr.
+fn sakshi_ring_decode_event(buf, buf_len, dst, dst_cap, out_text_len) {
+    if (buf_len < _SK_BIN_HDR_SIZE) {
+        store64(out_text_len, 0);
+        return 0;
+    }
+
+    # Read header
+    var ts = load64(buf);
+    var level = load8(buf + 8);
+    var cat = load8(buf + 9);
+    var msg_len = load16(buf + 10);
+
+    var event_size = _SK_BIN_HDR_SIZE + msg_len;
+    if (buf_len < event_size) {
+        store64(out_text_len, 0);
+        return 0;
+    }
+
+    # Map level to string
+    var lstr = "?????";
+    var llen = 5;
+    if (level == 0) { lstr = "ERROR"; llen = 5; }
+    if (level == 1) { lstr = "WARN"; llen = 4; }
+    if (level == 2) { lstr = "INFO"; llen = 4; }
+    if (level == 3) { lstr = "DEBUG"; llen = 5; }
+    if (level == 4) { lstr = "TRACE"; llen = 5; }
+    if (level == 10) { lstr = "ENTER"; llen = 5; }
+    if (level == 11) { lstr = "EXIT"; llen = 4; }
+
+    # Format: [timestamp] [LEVEL] msg\n
+    var pos: i64 = 0;
+    if (pos < dst_cap) { store8(dst + pos, 91); pos = pos + 1; }
+    pos = _sk_write_int(dst, pos, dst_cap, ts);
+    if (pos < dst_cap) { store8(dst + pos, 93); pos = pos + 1; }
+    if (pos < dst_cap) { store8(dst + pos, 32); pos = pos + 1; }
+    if (pos < dst_cap) { store8(dst + pos, 91); pos = pos + 1; }
+    pos = _sk_write_str(dst, pos, dst_cap, lstr, llen);
+    if (pos < dst_cap) { store8(dst + pos, 93); pos = pos + 1; }
+    if (pos < dst_cap) { store8(dst + pos, 32); pos = pos + 1; }
+    pos = _sk_write_str(dst, pos, dst_cap, buf + _SK_BIN_HDR_SIZE, msg_len);
+    if (pos < dst_cap) { store8(dst + pos, 10); pos = pos + 1; }
+
+    store64(out_text_len, pos);
+    return event_size;
+}
+
 # ================================================================
-# UDP network target
+# UDP network target — binary events
 # ================================================================
 # Uses sendto syscall (44 on x86_64) with AF_INET (2) + SOCK_DGRAM (2)
 var _sk_udp_fd: i64 = 0 - 1;
@@ -135,7 +220,6 @@ fn sakshi_output_udp(ip, port) {
     _sk_udp_fd = fd;
 
     # Build sockaddr_in
-    # sin_family = AF_INET (2), sin_port in network byte order
     var port_be = ((port & 0xFF) << 8) | ((port >> 8) & 0xFF);
     store16(&_sk_udp_addr, 2);
     store16(&_sk_udp_addr + 2, port_be);
@@ -156,11 +240,25 @@ fn sakshi_output_udp_close() {
     return 0;
 }
 
-fn _sk_write_udp(buf, len) {
-    if (_sk_udp_fd >= 0) {
-        # sendto(fd, buf, len, flags=0, addr, addrlen=16) — syscall 44
-        syscall(44, _sk_udp_fd, buf, len, 0, &_sk_udp_addr, 16);
-    }
+# Send a binary event packet over UDP.
+# Packet format: same 12-byte header + message bytes.
+fn _sk_write_udp_event(level, category, msg, msg_len) {
+    if (_sk_udp_fd < 0) { return 0; }
+    var ts = _sk_now_ns();
+
+    # Build packet in a stack buffer (12 header + msg, max 256)
+    var pkt[268];
+    store64(&pkt, ts);
+    store8(&pkt + 8, level);
+    store8(&pkt + 9, category);
+    store16(&pkt + 10, msg_len);
+
+    var pkt_msg_len = msg_len;
+    if (pkt_msg_len > 256) { pkt_msg_len = 256; }
+    _sk_memcpy(&pkt + 12, msg, pkt_msg_len);
+
+    var total = 12 + pkt_msg_len;
+    syscall(44, _sk_udp_fd, &pkt, total, 0, &_sk_udp_addr, 16);
     return 0;
 }
 
@@ -173,14 +271,51 @@ fn sakshi_ipv4(a, b, c, d) {
 }
 
 # ================================================================
-# Unified write dispatcher
+# Unified write dispatchers
 # ================================================================
+
+# Text write — used by stderr and file targets
 fn _sk_write(buf, len) {
     if (_sk_output_target == SK_OUT_FILE) { return _sk_write_file(buf, len); }
-    if (_sk_output_target == SK_OUT_BUFFER) { return _sk_write_ring(buf, len); }
-    if (_sk_output_target == SK_OUT_UDP) { return _sk_write_udp(buf, len); }
-    # Default: stderr
+    # stderr is also text
     return _sk_write_stderr(buf, len);
+}
+
+# Event write — used by trace.cyr for ring buffer and UDP (binary),
+# falls back to text formatting for stderr/file.
+fn _sk_emit(level, category, msg, msg_len) {
+    if (_sk_output_target == SK_OUT_BUFFER) {
+        return _sk_write_ring_event(level, category, msg, msg_len);
+    }
+    if (_sk_output_target == SK_OUT_UDP) {
+        return _sk_write_udp_event(level, category, msg, msg_len);
+    }
+    # Text targets — format and write
+    var buf[256];
+    var level_str = "?????";
+    var level_len = 5;
+    if (level == 0) { level_str = "ERROR"; level_len = 5; }
+    if (level == 1) { level_str = "WARN"; level_len = 4; }
+    if (level == 2) { level_str = "INFO"; level_len = 4; }
+    if (level == 3) { level_str = "DEBUG"; level_len = 5; }
+    if (level == 4) { level_str = "TRACE"; level_len = 5; }
+    var len = _sk_fmt_line(&buf, 256, level_str, level_len, msg, msg_len);
+    _sk_write(&buf, len);
+    return 0;
+}
+
+# Span emit — binary for buffer/UDP, text for stderr/file
+fn _sk_emit_span(action_level, action_str, action_len, name, name_len, elapsed_ns) {
+    if (_sk_output_target == SK_OUT_BUFFER) {
+        return _sk_write_ring_event(action_level, 0, name, name_len);
+    }
+    if (_sk_output_target == SK_OUT_UDP) {
+        return _sk_write_udp_event(action_level, 0, name, name_len);
+    }
+    var buf[256];
+    var len = _sk_fmt_span(&buf, 256, action_str, action_len, name, name_len, elapsed_ns);
+    _sk_write(&buf, len);
+    return 0;
 }
 
 # ================================================================

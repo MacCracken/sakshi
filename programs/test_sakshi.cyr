@@ -1,5 +1,6 @@
 # test_sakshi.cyr — test program for sakshi
-# Exercises error codes, tracing, spans, output targets, and ring buffer.
+# Exercises error codes, tracing, spans, output targets, binary ring buffer,
+# error context fields, and event decoding.
 
 include "src/lib.cyr"
 
@@ -12,38 +13,50 @@ fn test_errors() {
     var code = sakshi_err_code(err);
     var cat = sakshi_err_category(err);
 
-    # Verify code == 3 (ERR_NOT_FOUND)
     if (code != 3) {
         sakshi_error("err_code mismatch", 17);
         return 1;
     }
-
-    # Verify category == 2 (ERR_CAT_IO)
     if (cat != 2) {
         sakshi_error("err_category mismatch", 21);
         return 1;
     }
 
-    # Verify ERR_OK is ok
+    # Context should be 0 for sakshi_err_new
+    if (sakshi_err_context(err) != 0) {
+        sakshi_error("context should be 0", 19);
+        return 1;
+    }
+
+    # Test sakshi_err_with_ctx
+    var err2 = sakshi_err_with_ctx(ERR_TIMEOUT, ERR_CAT_NET, 0xDEAD);
+    if (sakshi_err_code(err2) != 5) {
+        sakshi_error("ctx err code mismatch", 21);
+        return 1;
+    }
+    if (sakshi_err_category(err2) != 7) {
+        sakshi_error("ctx err cat mismatch", 20);
+        return 1;
+    }
+    if (sakshi_err_context(err2) != 0xDEAD) {
+        sakshi_error("ctx err context mismatch", 24);
+        return 1;
+    }
+
+    # Test sakshi_err_at_span (span depth = 0 here)
+    var err3 = sakshi_err_at_span(ERR_INVALID, ERR_CAT_PARSE);
+    if (sakshi_err_context(err3) != 0) {
+        sakshi_error("at_span context should be 0", 27);
+        return 1;
+    }
+
+    # Test is_ok / is_err
     if (sakshi_is_ok(ERR_OK) != 1) {
-        sakshi_error("is_ok failed on ERR_OK", 22);
+        sakshi_error("is_ok failed", 12);
         return 1;
     }
-
-    # Verify packed error is_err
     if (sakshi_is_err(err) != 1) {
-        sakshi_error("is_err failed on packed error", 29);
-        return 1;
-    }
-
-    # Test all categories pack/unpack correctly
-    var e2 = sakshi_err_new(ERR_TIMEOUT, ERR_CAT_NET);
-    if (sakshi_err_code(e2) != 5) {
-        sakshi_error("ERR_TIMEOUT code mismatch", 25);
-        return 1;
-    }
-    if (sakshi_err_category(e2) != 7) {
-        sakshi_error("ERR_CAT_NET category mismatch", 29);
+        sakshi_error("is_err failed", 13);
         return 1;
     }
 
@@ -55,7 +68,6 @@ fn test_errors() {
 # Trace tests
 # ================================================================
 fn test_trace() {
-    # Test all log levels at default (INFO)
     sakshi_error("this is an error", 16);
     sakshi_warn("this is a warning", 17);
     sakshi_info("this is info", 12);
@@ -64,7 +76,7 @@ fn test_trace() {
     sakshi_debug("this should not appear", 22);
     sakshi_trace("this should not appear", 22);
 
-    # Enable debug level and test again
+    # Enable debug level
     sakshi_set_level(SK_DEBUG);
     sakshi_debug("debug now visible", 17);
 
@@ -80,22 +92,25 @@ fn test_trace() {
 # ================================================================
 fn test_spans() {
     sakshi_span_enter("outer_work", 10);
-
-    # Nested span
     sakshi_span_enter("inner_work", 10);
 
-    # Verify depth == 2
     if (sakshi_span_depth() != 2) {
         sakshi_error("span depth mismatch", 19);
+        return 1;
+    }
+
+    # Test sakshi_err_at_span inside a span
+    var err = sakshi_err_at_span(ERR_BUSY, ERR_CAT_RUNTIME);
+    if (sakshi_err_context(err) != 2) {
+        sakshi_error("at_span should be depth 2", 25);
         return 1;
     }
 
     var inner_ns = sakshi_span_exit();
     var outer_ns = sakshi_span_exit();
 
-    # Verify depth back to 0
     if (sakshi_span_depth() != 0) {
-        sakshi_error("span depth not zero after exit", 30);
+        sakshi_error("span depth not zero", 19);
         return 1;
     }
 
@@ -104,42 +119,55 @@ fn test_spans() {
 }
 
 # ================================================================
-# Ring buffer tests
+# Ring buffer tests (binary events)
 # ================================================================
 fn test_ring_buffer() {
-    # Switch to buffer output
     sakshi_output_buffer();
 
-    # Write a known message
-    sakshi_info("buffered message", 16);
+    # Write some events
+    sakshi_info("ring test one", 13);
+    sakshi_warn("ring test two", 13);
 
-    # Verify something is in the ring buffer
-    if (sakshi_ring_len() == 0) {
-        # Can't use sakshi_error here — output goes to buffer
-        # Switch back to stderr to report
+    # Verify events were recorded
+    if (sakshi_ring_event_count() != 2) {
         sakshi_set_output(SK_OUT_STDERR);
-        sakshi_error("ring buffer empty after write", 29);
+        sakshi_error("expected 2 ring events", 22);
         return 1;
     }
 
-    # Read it back
-    var readbuf[256];
-    var n = sakshi_ring_read(&readbuf, 256);
+    if (sakshi_ring_len() == 0) {
+        sakshi_set_output(SK_OUT_STDERR);
+        sakshi_error("ring buffer empty", 17);
+        return 1;
+    }
+
+    # Read raw and decode first event
+    var raw[4096];
+    var n = sakshi_ring_read_raw(&raw, 4096);
     if (n == 0) {
         sakshi_set_output(SK_OUT_STDERR);
-        sakshi_error("ring_read returned 0", 20);
+        sakshi_error("ring read_raw returned 0", 23);
+        return 1;
+    }
+
+    # Decode first event to text
+    var text[256];
+    var text_len: i64 = 0;
+    var consumed = sakshi_ring_decode_event(&raw, n, &text, 256, &text_len);
+    if (consumed == 0) {
+        sakshi_set_output(SK_OUT_STDERR);
+        sakshi_error("decode returned 0", 17);
         return 1;
     }
 
     # Clear and verify
     sakshi_ring_clear();
-    if (sakshi_ring_len() != 0) {
+    if (sakshi_ring_event_count() != 0) {
         sakshi_set_output(SK_OUT_STDERR);
         sakshi_error("ring not empty after clear", 26);
         return 1;
     }
 
-    # Switch back to stderr
     sakshi_set_output(SK_OUT_STDERR);
     sakshi_info("ring buffer tests passed", 24);
     return 0;
@@ -158,7 +186,6 @@ fn test_file_output() {
     sakshi_info("file output test", 16);
     sakshi_output_file_close();
 
-    # Verify we're back on stderr
     sakshi_info("file output tests passed", 24);
     return 0;
 }
