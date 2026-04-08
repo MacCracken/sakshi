@@ -103,7 +103,7 @@ fn _sk_memcpy(dst, src, n) {
 }
 
 fn _sk_now_ns() {
-    var ts[2];
+    var ts[16];
     syscall(_SK_SYS_CLOCK_GETTIME, _SK_CLOCK_MONO_RAW, &ts);
     return load64(&ts) * 1000000000 + load64(&ts + 8);
 }
