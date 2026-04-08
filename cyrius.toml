@@ -1,6 +1,6 @@
 [package]
 name = "sakshi"
-version = "0.5.0"
+version = "0.7.0"
 description = "Sakshi — the silent witness. Tracing, error handling, and structured logging for Cyrius."
 license = "GPL-3.0-only"
 repository = "https://github.com/MacCracken/sakshi"

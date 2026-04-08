@@ -65,11 +65,11 @@
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Full profile .tcyr test suite (ring buffer, spans, UDP, binary decode) | Not started |
+| 1 | Full profile .tcyr test suite (28 assertions: spans, ring buffer, binary decode, edge cases) | Done |
 | 2 | .bcyr benchmarks (err_new 6ns, trace_info 1us, filtered 7ns) | Done |
 | 3 | Integration tested across 3+ consumer crates | Not started |
 | 4 | Vidya entry for sakshi usage patterns | Done |
-| 5 | Resolve Cyrius bug #16 (enum data section shift) or confirm var workaround permanent | Not started |
+| 5 | Cyrius bug #16 (enum data section shift) — fixed in Cyrius 2.2.0 | Done |
 
 ---
 

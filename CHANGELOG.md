@@ -5,7 +5,20 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] - Unreleased
+## [0.7.0] - Unreleased
+
+### Added
+
+- **Full profile test suite** — `tests/test_sakshi_full.tcyr` (28 assertions: spans, ring buffer, binary decode, edge cases)
+- **Benchmarks** — `benches/sakshi.bcyr` (err_new 6ns, err_with_ctx 7ns, err_unpack 13ns, timestamp 430ns, trace_info 1us, trace_filtered 7ns)
+- **Vidya entry** — `content/tracing/` topic with concept.toml (4 best practices, 4 gotchas, 3 performance notes with evidence) and runnable cyrius.cyr
+
+### Fixed
+
+- Cyrius bug #16 resolved in Cyrius 2.2.0 — enums no longer shift data section layout; full profile works without var workaround
+- CI pinned to Cyrius 2.2.0
+
+## [0.5.0]
 
 ### Added
 
