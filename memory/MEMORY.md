@@ -1,0 +1,1 @@
+- [Foundation layer](project_foundation_layer.md) — zero deps, separate repo from lang but can be incorporated later

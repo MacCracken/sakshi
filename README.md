@@ -35,10 +35,10 @@ sakshi/
 ## Usage
 
 ```cyrius
-include "sakshi/lib.cyr"
+include "sakshi/src/lib.cyr"
 
 # Errors — packed i64
-var err = sakshi_error(ERR_IO, ERR_CAT_SYSCALL);
+var err = sakshi_err_new(ERR_NOT_FOUND, ERR_CAT_IO);
 var code = sakshi_err_code(err);
 var cat = sakshi_err_category(err);
 

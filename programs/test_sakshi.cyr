@@ -1,0 +1,115 @@
+# test_sakshi.cyr — test program for sakshi
+# Exercises error codes, tracing, and spans.
+
+include "src/lib.cyr"
+
+# ================================================================
+# Error tests
+# ================================================================
+fn test_errors() {
+    # Pack and unpack
+    var err = sakshi_err_new(ERR_NOT_FOUND, ERR_CAT_IO);
+    var code = sakshi_err_code(err);
+    var cat = sakshi_err_category(err);
+
+    # Verify code == 3 (ERR_NOT_FOUND)
+    if (code != 3) {
+        sakshi_error("err_code mismatch", 17);
+        return 1;
+    }
+
+    # Verify category == 2 (ERR_CAT_IO)
+    if (cat != 2) {
+        sakshi_error("err_category mismatch", 21);
+        return 1;
+    }
+
+    # Verify ERR_OK is ok
+    if (sakshi_is_ok(ERR_OK) != 1) {
+        sakshi_error("is_ok failed on ERR_OK", 22);
+        return 1;
+    }
+
+    # Verify packed error is_err
+    if (sakshi_is_err(err) != 1) {
+        sakshi_error("is_err failed on packed error", 29);
+        return 1;
+    }
+
+    sakshi_info("error tests passed", 18);
+    return 0;
+}
+
+# ================================================================
+# Trace tests
+# ================================================================
+fn test_trace() {
+    # Test all log levels
+    sakshi_error("this is an error", 16);
+    sakshi_warn("this is a warning", 17);
+    sakshi_info("this is info", 12);
+
+    # These should be suppressed at default level (SK_INFO = 2)
+    sakshi_debug("this should not appear", 22);
+    sakshi_trace("this should not appear", 22);
+
+    # Enable debug level and test again
+    sakshi_set_level(SK_DEBUG);
+    sakshi_debug("debug now visible", 17);
+
+    # Restore default
+    sakshi_set_level(SK_INFO);
+
+    sakshi_info("trace tests passed", 18);
+    return 0;
+}
+
+# ================================================================
+# Span tests
+# ================================================================
+fn test_spans() {
+    sakshi_span_enter("outer_work", 10);
+
+    # Nested span
+    sakshi_span_enter("inner_work", 10);
+
+    # Verify depth == 2
+    if (sakshi_span_depth() != 2) {
+        sakshi_error("span depth mismatch", 19);
+        return 1;
+    }
+
+    var inner_ns = sakshi_span_exit();
+    var outer_ns = sakshi_span_exit();
+
+    # Verify depth back to 0
+    if (sakshi_span_depth() != 0) {
+        sakshi_error("span depth not zero after exit", 30);
+        return 1;
+    }
+
+    sakshi_info("span tests passed", 17);
+    return 0;
+}
+
+# ================================================================
+# Main
+# ================================================================
+fn main() {
+    sakshi_info("sakshi test suite starting", 26);
+
+    var r1 = test_errors();
+    var r2 = test_trace();
+    var r3 = test_spans();
+
+    if (r1 == 0 && r2 == 0 && r3 == 0) {
+        sakshi_info("all tests passed", 16);
+        return 0;
+    }
+
+    sakshi_error("some tests failed", 17);
+    return 1;
+}
+
+var exit_code = main();
+syscall(60, exit_code);

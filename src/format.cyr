@@ -1,0 +1,132 @@
+# format.cyr — internal formatting helpers for sakshi
+# Zero-dep: inlined string/memory primitives needed by trace and span modules.
+# No heap allocation. Fixed buffers only.
+
+# Length of null-terminated string
+fn _sk_strlen(s) {
+    var n: i64 = 0;
+    while (load8(s + n) != 0) { n = n + 1; }
+    return n;
+}
+
+# Copy n bytes from src to dst
+fn _sk_memcpy(dst, src, n) {
+    for (var i = 0; i < n; i = i + 1) {
+        store8(dst + i, load8(src + i));
+    }
+    return dst;
+}
+
+# Fill n bytes at dst with val
+fn _sk_memset(dst, val, n) {
+    for (var i = 0; i < n; i = i + 1) {
+        store8(dst + i, val);
+    }
+    return dst;
+}
+
+# Convert integer to decimal string in buffer, return length written.
+# Buffer must be at least 24 bytes.
+fn _sk_fmt_int(n, buf) {
+    var bi = 23;
+    var neg: i64 = 0;
+    if (n < 0) { neg = 1; n = 0 - n; }
+    if (n == 0) { store8(buf + bi, 48); bi = bi - 1; }
+    while (n > 0) { store8(buf + bi, 48 + n % 10); bi = bi - 1; n = n / 10; }
+    if (neg == 1) { store8(buf + bi, 45); bi = bi - 1; }
+    var len = 23 - bi;
+    var src = bi + 1;
+    for (var si = 0; si < len; si = si + 1) {
+        store8(buf + si, load8(buf + src + si));
+    }
+    store8(buf + len, 0);
+    return len;
+}
+
+# Format a trace line into buf: "[LEVEL] msg"
+# Returns bytes written. Does not null-terminate (caller adds newline).
+# level_str: pointer to level tag e.g. "ERROR", level_len: its length
+# msg: message string, msg_len: its length
+fn _sk_fmt_line(buf, cap, level_str, level_len, msg, msg_len) {
+    var pos: i64 = 0;
+
+    # [
+    if (pos < cap) { store8(buf + pos, 91); pos = pos + 1; }
+
+    # level tag
+    var li = 0;
+    while (li < level_len && pos < cap) {
+        store8(buf + pos, load8(level_str + li));
+        pos = pos + 1;
+        li = li + 1;
+    }
+
+    # ] + space
+    if (pos < cap) { store8(buf + pos, 93); pos = pos + 1; }
+    if (pos < cap) { store8(buf + pos, 32); pos = pos + 1; }
+
+    # message
+    var mi = 0;
+    while (mi < msg_len && pos < cap) {
+        store8(buf + pos, load8(msg + mi));
+        pos = pos + 1;
+        mi = mi + 1;
+    }
+
+    # newline
+    if (pos < cap) { store8(buf + pos, 10); pos = pos + 1; }
+
+    return pos;
+}
+
+# Format a span line: "[SPAN] name (elapsed_ns ns)"
+# Returns bytes written.
+fn _sk_fmt_span(buf, cap, action, action_len, name, name_len, elapsed_ns) {
+    var pos: i64 = 0;
+
+    # [SPAN]
+    if (pos < cap) { store8(buf + pos, 91); pos = pos + 1; }
+    var si = 0;
+    while (si < action_len && pos < cap) {
+        store8(buf + pos, load8(action + si));
+        pos = pos + 1;
+        si = si + 1;
+    }
+    if (pos < cap) { store8(buf + pos, 93); pos = pos + 1; }
+    if (pos < cap) { store8(buf + pos, 32); pos = pos + 1; }
+
+    # name
+    var ni = 0;
+    while (ni < name_len && pos < cap) {
+        store8(buf + pos, load8(name + ni));
+        pos = pos + 1;
+        ni = ni + 1;
+    }
+
+    # elapsed if provided (> 0)
+    if (elapsed_ns > 0) {
+        # " ("
+        if (pos < cap) { store8(buf + pos, 32); pos = pos + 1; }
+        if (pos < cap) { store8(buf + pos, 40); pos = pos + 1; }
+
+        # format elapsed
+        var tmp[24];
+        var tlen = _sk_fmt_int(elapsed_ns, &tmp);
+        var ti = 0;
+        while (ti < tlen && pos < cap) {
+            store8(buf + pos, load8(&tmp + ti));
+            pos = pos + 1;
+            ti = ti + 1;
+        }
+
+        # "ns)"
+        if (pos < cap) { store8(buf + pos, 110); pos = pos + 1; }
+        if (pos < cap) { store8(buf + pos, 115); pos = pos + 1; }
+        if (pos < cap) { store8(buf + pos, 41); pos = pos + 1; }
+    }
+
+    # newline
+    if (pos < cap) { store8(buf + pos, 10); pos = pos + 1; }
+
+    return pos;
+}

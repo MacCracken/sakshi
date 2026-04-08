@@ -1,0 +1,55 @@
+# error.cyr — packed i64 error codes for sakshi
+# Format: [63:32 reserved] [31:16 category] [15:0 error code]
+# Zero allocation. Single OR + shift to create, single AND + shift to extract.
+
+# Error categories
+enum ErrCat {
+    ERR_CAT_NONE    = 0x0000;
+    ERR_CAT_SYSCALL = 0x0001;
+    ERR_CAT_IO      = 0x0002;
+    ERR_CAT_PARSE   = 0x0003;
+    ERR_CAT_CONFIG  = 0x0004;
+    ERR_CAT_RUNTIME = 0x0005;
+    ERR_CAT_ALLOC   = 0x0006;
+    ERR_CAT_NET     = 0x0007;
+    ERR_CAT_AUTH    = 0x0008;
+}
+
+# Common error codes (domain-agnostic)
+enum ErrCode {
+    ERR_OK          = 0;
+    ERR_UNKNOWN     = 1;
+    ERR_INVALID     = 2;
+    ERR_NOT_FOUND   = 3;
+    ERR_PERMISSION  = 4;
+    ERR_TIMEOUT     = 5;
+    ERR_OVERFLOW    = 6;
+    ERR_BUSY        = 7;
+}
+
+# Pack an error code + category into a single i64
+fn sakshi_err_new(code, category) {
+    return (category << 16) | (code & 0xFFFF);
+}
+
+# Extract the error code (bits 0-15)
+fn sakshi_err_code(err) {
+    return err & 0xFFFF;
+}
+
+# Extract the category (bits 16-31)
+fn sakshi_err_category(err) {
+    return (err >> 16) & 0xFFFF;
+}
+
+# Check if a value is an error (non-zero)
+fn sakshi_is_err(err) {
+    if (err != 0) { return 1; }
+    return 0;
+}
+
+# Check if a value is ok (zero)
+fn sakshi_is_ok(err) {
+    if (err == 0) { return 1; }
+    return 0;
+}

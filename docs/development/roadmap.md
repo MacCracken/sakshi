@@ -6,13 +6,13 @@
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Packed i64 error format (code + category) | Designed |
-| 2 | 8 error categories (syscall, io, parse, config, runtime, alloc, net, auth) | Designed |
-| 3 | Log levels (error, warn, info, debug, trace) | Designed |
-| 4 | Fixed-buffer formatted output | Not started |
-| 5 | Serial output target | Not started |
-| 6 | Basic span enter/exit with timing | Not started |
-| 7 | Test programs in programs/ | Not started |
+| 1 | Packed i64 error format (code + category) | Done |
+| 2 | 8 error categories (syscall, io, parse, config, runtime, alloc, net, auth) | Done |
+| 3 | Log levels (error, warn, info, debug, trace) | Done |
+| 4 | Fixed-buffer formatted output | Done |
+| 5 | Stderr output target | Done |
+| 6 | Basic span enter/exit with timing | Done |
+| 7 | Test program in programs/ | Done |
 
 ## v0.2.0 — Config & Targets
 
@@ -27,7 +27,7 @@
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | .tcyr test suite (when Cyrius v2.0 lands) | Not started |
-| 2 | .bcyr benchmarks | Not started |
+| 1 | Migrate test program to .tcyr test suite (Cyrius v2.0) | Not started |
+| 2 | Migrate to .bcyr benchmarks (Cyrius v2.0) | Not started |
 | 3 | Integration tested across 3+ consumer crates | Not started |
 | 4 | Vidya entry for sakshi usage patterns | Not started |

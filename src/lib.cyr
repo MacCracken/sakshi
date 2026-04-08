@@ -1,0 +1,22 @@
+# lib.cyr — sakshi public API
+# Include this file to use sakshi in your Cyrius project.
+#
+# Usage: include "sakshi/src/lib.cyr"
+#
+# Provides:
+#   Error:  sakshi_err_new, sakshi_err_code, sakshi_err_category,
+#           sakshi_is_err, sakshi_is_ok
+#   Trace:  sakshi_error, sakshi_warn, sakshi_info, sakshi_debug, sakshi_trace,
+#           sakshi_set_level, sakshi_get_level
+#   Span:   sakshi_span_enter, sakshi_span_exit, sakshi_span_depth
+#   Output: sakshi_set_output_fd
+
+# Internal helpers (format, output) first — other modules depend on them
+include "src/format.cyr"
+include "src/output.cyr"
+
+# Core modules
+include "src/error.cyr"
+include "src/trace.cyr"
+include "src/span.cyr"
+include "src/config.cyr"

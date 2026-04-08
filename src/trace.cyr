@@ -1,0 +1,65 @@
+# trace.cyr — log levels and structured output for sakshi
+# Fixed-buffer formatting. Zero heap allocation.
+# Depends: format.cyr, output.cyr (included via lib.cyr)
+
+# Log levels — lower value = higher severity
+enum LogLevel {
+    SK_ERROR = 0;
+    SK_WARN  = 1;
+    SK_INFO  = 2;
+    SK_DEBUG = 3;
+    SK_TRACE = 4;
+}
+
+# Current log level — messages above this level are suppressed.
+# Default: SK_INFO (show error, warn, info)
+var _sk_log_level = 2;
+
+# Set the active log level
+fn sakshi_set_level(level) {
+    _sk_log_level = level;
+    return 0;
+}
+
+# Get the active log level
+fn sakshi_get_level() {
+    return _sk_log_level;
+}
+
+# Internal: emit a log line if level is enabled
+# level: numeric level, level_str: tag string, level_len: tag length
+# msg: message pointer, msg_len: message byte length
+fn _sk_log(level, level_str, level_len, msg, msg_len) {
+    if (level > _sk_log_level) { return 0; }
+    var buf[256];
+    var len = _sk_fmt_line(&buf, 256, level_str, level_len, msg, msg_len);
+    _sk_write(&buf, len);
+    return 0;
+}
+
+# Public API — each takes a message string and its byte length
+
+fn sakshi_error(msg, msg_len) {
+    _sk_log(SK_ERROR, "ERROR", 5, msg, msg_len);
+    return 0;
+}
+
+fn sakshi_warn(msg, msg_len) {
+    _sk_log(SK_WARN, "WARN", 4, msg, msg_len);
+    return 0;
+}
+
+fn sakshi_info(msg, msg_len) {
+    _sk_log(SK_INFO, "INFO", 4, msg, msg_len);
+    return 0;
+}
+
+fn sakshi_debug(msg, msg_len) {
+    _sk_log(SK_DEBUG, "DEBUG", 5, msg, msg_len);
+    return 0;
+}
+
+fn sakshi_trace(msg, msg_len) {
+    _sk_log(SK_TRACE, "TRACE", 5, msg, msg_len);
+    return 0;
+}
