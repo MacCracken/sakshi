@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 # Run sakshi test suite (.tcyr files)
 # Expects: build/cc2 and build/cyrb available

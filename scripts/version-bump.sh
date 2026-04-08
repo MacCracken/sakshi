@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 # Bump version across all files
 NEW_VERSION="${1:?Usage: $0 <new-version>}"
