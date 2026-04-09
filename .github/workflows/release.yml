@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 env:
-  CYRIUS_VERSION: "2.2.0"
+  CYRIUS_VERSION: "2.7.2"
 
 jobs:
   # ── CI Gate (must pass before release) ──
@@ -38,12 +38,12 @@ jobs:
         run: |
           curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
           tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
-          export CYRIUS_HOME="cyrius-$CYRIUS_VERSION-x86_64-linux"
-          mkdir -p build
-          cp "$CYRIUS_HOME/bin/cc2" ./build/cc2
-          cp "$CYRIUS_HOME/bin/cyrb" ./build/cyrb
-          chmod +x ./build/cc2 ./build/cyrb
-          ln -sf "$CYRIUS_HOME/lib" ./lib
+          CYRIUS_DIR="cyrius-$CYRIUS_VERSION-x86_64-linux"
+          mkdir -p "$HOME/.cyrius/bin" "$HOME/.cyrius/lib"
+          cp "$CYRIUS_DIR/bin/"* "$HOME/.cyrius/bin/" 2>/dev/null || true
+          cp -r "$CYRIUS_DIR/lib/"* "$HOME/.cyrius/lib/" 2>/dev/null || true
+          chmod +x "$HOME/.cyrius/bin/"* 2>/dev/null || true
+          echo "$HOME/.cyrius/bin" >> $GITHUB_PATH
 
       - name: Build and run tests
         run: sh scripts/test.sh
