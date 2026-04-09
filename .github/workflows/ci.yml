@@ -29,52 +29,14 @@ jobs:
           CYRIUS_DIR="cyrius-$CYRIUS_VERSION-x86_64-linux"
           mkdir -p "$HOME/.cyrius/bin" "$HOME/.cyrius/lib"
           cp "$CYRIUS_DIR/bin/"* "$HOME/.cyrius/bin/" 2>/dev/null || true
+          cp "$CYRIUS_DIR/scripts/cyrius" "$HOME/.cyrius/bin/cyrius" 2>/dev/null || true
           cp -r "$CYRIUS_DIR/lib/"* "$HOME/.cyrius/lib/" 2>/dev/null || true
           chmod +x "$HOME/.cyrius/bin/"* 2>/dev/null || true
           echo "$HOME/.cyrius/bin" >> $GITHUB_PATH
           echo "Cyrius $CYRIUS_VERSION installed"
 
-      - name: Compile tests
-        run: |
-          mkdir -p build
-          pass=0; fail=0
-          for tcyr in tests/*.tcyr; do
-            name=$(basename "$tcyr" .tcyr)
-            if cyrius build "$tcyr" "build/$name" 2>/dev/null; then
-              echo "  built: $name ($(wc -c < "build/$name") bytes)"
-              pass=$((pass + 1))
-            else
-              echo "  FAIL: $name (compile error)"
-              cyrius build "$tcyr" "build/$name" 2>&1 || true
-              fail=$((fail + 1))
-            fi
-          done
-          echo "$pass compiled, $fail failed"
-          test $fail -eq 0
-
       - name: Run tests
-        run: |
-          pass=0; fail=0
-          for tcyr in tests/*.tcyr; do
-            name=$(basename "$tcyr" .tcyr)
-            bin="build/$name"
-            [ -x "$bin" ] || continue
-            output=$("$bin" 2>&1) || true
-            ec=$?
-            summary=$(echo "$output" | grep -o '[0-9]* passed, [0-9]* failed' | tail -1)
-            f=$(echo "$summary" | grep -o '[0-9]* failed' | grep -o '^[0-9]*' || echo "")
-            if [ "$ec" -eq 0 ] && { [ -z "$f" ] || [ "$f" -eq 0 ]; }; then
-              echo "  PASS: $name${summary:+ ($summary)}"
-              pass=$((pass + 1))
-            else
-              echo "  FAIL: $name (exit $ec)${summary:+ ($summary)}"
-              echo "$output" | grep "FAIL:" | head -3
-              fail=$((fail + 1))
-            fi
-          done
-          echo ""
-          echo "$pass passed, $fail failed"
-          test $fail -eq 0
+        run: cyrius test
 
   # ── Security ──
   security:
