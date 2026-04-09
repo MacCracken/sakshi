@@ -2,86 +2,11 @@
 
 > **v0.8.0** in progress. Cyrius 3.2.0 upgrade, language modernization.
 
-## v0.5.0 — Released
-
-### Core
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | Packed i64 error format: `[context:32][category:16][code:16]` | Done |
-| 2 | Input validation — category/context masked to prevent field overflow | Done |
-| 3 | 8 error categories, 8 common error codes (enums) | Done |
-| 4 | 5 log levels (error/warn/info/debug/trace) with runtime filtering | Done |
-| 5 | Monotonic nanosecond timestamps on all events | Done |
-| 6 | Fixed-buffer text formatting (`[timestamp] [LEVEL] msg\n`) | Done |
-
-### Output Targets
-
-| # | Item | Profile | Status |
-|---|------|---------|--------|
-| 1 | Stderr (default) | slim + full | Done |
-| 2 | File (append mode, tee in slim, exclusive in full) | slim + full | Done |
-| 3 | Ring buffer (4KB, binary events, power-of-2 bitmask, overwrite-oldest) | full | Done |
-| 4 | UDP (binary events via sendto) | full | Done |
-| 5 | Binary event format (12-byte header + msg), `sakshi_ring_decode_event` | full | Done |
-| 6 | Unified `_sk_emit` dispatcher (binary vs text by target) | full | Done |
-
-### Spans (full profile only)
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | `sakshi_span_enter` / `sakshi_span_exit` with nanosecond timing | Done |
-| 2 | 16-deep fixed span stack (384 bytes, no heap) | Done |
-| 3 | `sakshi_err_at_span` — error-to-span correlation via context field | Done |
-
-### Distribution
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | `sakshi.cyr` — slim stderr profile (4 globals, 0 arrays) | Done |
-| 2 | `sakshi_full.cyr` — full profile (spans, ring buffer, UDP) | Done |
-| 3 | `src/*.cyr` — modular source (7 files) | Done |
-| 4 | `#ref "sakshi.toml"` compile-time config in modular source | Done |
-
-### CI/Release
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | GitHub Actions CI (build, check, security, test, benchmarks, docs) | Done |
-| 2 | GitHub Actions release (CI gate, source archive, SHA256, changelog extract) | Done |
-| 3 | `scripts/test.sh` — auto-discover .tcyr, auto-find cyrb | Done |
-| 4 | `scripts/version-bump.sh` — atomic VERSION/cyrius.toml/CHANGELOG update | Done |
-| 5 | Stdlib `lib/` symlink pattern (gitignored, CI creates per-job) | Done |
-
-### Tests
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | Slim profile .tcyr test suite (12 assertions) | Done |
-
----
-
-## v0.8.0 — Cyrius 3.2.0 Upgrade
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | Cyrius compiler target 2.7.2 → 3.2.0 | Done |
-| 2 | Slim profile: var constants → enums (bug #16 workaround removed) | Done |
-| 3 | `match` expressions for level-to-string dispatch | Done |
-| 4 | `_sk_level_str` centralized helper (full + modular) | Done |
-| 5 | CI/release workflows updated | Done |
-
----
-
 ## v1.0.0 — Stable
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Full profile .tcyr test suite (28 assertions: spans, ring buffer, binary decode, edge cases) | Done |
-| 2 | .bcyr benchmarks (err_new 6ns, trace_info 1us, filtered 7ns) | Done |
-| 3 | Integration tested across 3+ consumer crates | Not started |
-| 4 | Vidya entry for sakshi usage patterns | Done |
-| 5 | Cyrius bug #16 (enum data section shift) — fixed in Cyrius 2.2.0 | Done |
+| 1 | Integration tested across 3+ consumer crates | Not started |
 
 ---
 
