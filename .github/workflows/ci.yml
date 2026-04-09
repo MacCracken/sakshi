@@ -27,27 +27,25 @@ jobs:
           curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
           tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
           CYRIUS_DIR="cyrius-$CYRIUS_VERSION-x86_64-linux"
-          mkdir -p build
-          cp "$CYRIUS_DIR/bin/cc2" ./build/cc2
-          chmod +x ./build/cc2
-          # Copy Cyrius stdlib WITHOUT overwriting sakshi's own lib/
-          mkdir -p .cyrius_lib
-          cp "$CYRIUS_DIR/lib/"*.cyr .cyrius_lib/ 2>/dev/null || true
+          mkdir -p "$HOME/.cyrius/bin" "$HOME/.cyrius/lib"
+          cp "$CYRIUS_DIR/bin/"* "$HOME/.cyrius/bin/" 2>/dev/null || true
+          cp -r "$CYRIUS_DIR/lib/"* "$HOME/.cyrius/lib/" 2>/dev/null || true
+          chmod +x "$HOME/.cyrius/bin/"* 2>/dev/null || true
+          echo "$HOME/.cyrius/bin" >> $GITHUB_PATH
           echo "Cyrius $CYRIUS_VERSION installed"
 
       - name: Compile tests
         run: |
-          CC="./build/cc2"
+          mkdir -p build
           pass=0; fail=0
           for tcyr in tests/*.tcyr; do
             name=$(basename "$tcyr" .tcyr)
-            if cat "$tcyr" | "$CC" > "build/$name" 2>/dev/null; then
-              chmod +x "build/$name"
+            if cyrius build "$tcyr" "build/$name" 2>/dev/null; then
               echo "  built: $name ($(wc -c < "build/$name") bytes)"
               pass=$((pass + 1))
             else
               echo "  FAIL: $name (compile error)"
-              cat "$tcyr" | "$CC" > /dev/null 2>&1 || true
+              cyrius build "$tcyr" "build/$name" 2>&1 || true
               fail=$((fail + 1))
             fi
           done
@@ -123,24 +121,22 @@ jobs:
           curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
           tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
           CYRIUS_DIR="cyrius-$CYRIUS_VERSION-x86_64-linux"
-          mkdir -p build
-          # Build cyrdoc from source if not in tarball
+          mkdir -p "$HOME/.cyrius/bin"
           if [ -f "$CYRIUS_DIR/bin/cyrdoc" ]; then
-            cp "$CYRIUS_DIR/bin/cyrdoc" ./build/cyrdoc
-            chmod +x ./build/cyrdoc
-          elif [ -f "$CYRIUS_DIR/bin/cc2" ]; then
-            cp "$CYRIUS_DIR/bin/cc2" ./build/cc2
-            chmod +x ./build/cc2
+            cp "$CYRIUS_DIR/bin/cyrdoc" "$HOME/.cyrius/bin/cyrdoc"
+            chmod +x "$HOME/.cyrius/bin/cyrdoc"
+            echo "$HOME/.cyrius/bin" >> $GITHUB_PATH
+          else
             echo "cyrdoc not in release — skipping doc coverage"
           fi
 
       - name: Doc coverage
         run: |
-          if [ -x ./build/cyrdoc ]; then
+          if command -v cyrdoc >/dev/null 2>&1; then
             total=0
-            for f in src/*.cyr lib/sakshi.cyr lib/sakshi_full.cyr; do
+            for f in src/*.cyr sakshi.cyr sakshi_full.cyr; do
               [ -f "$f" ] || continue
-              u=$(./build/cyrdoc --check "$f" 2>&1 | tail -1 | grep -oP '(\d+) undocumented' | grep -oP '^\d+' || echo 0)
+              u=$(cyrdoc --check "$f" 2>&1 | tail -1 | grep -oP '(\d+) undocumented' | grep -oP '^\d+' || echo 0)
               if [ "$u" -gt 0 ]; then echo "  $f: $u undocumented"; fi
               total=$((total + u))
             done

@@ -24,8 +24,8 @@ This project is part of **AGNOS** — an AI-native operating system. The genesis
 
 1. **P(-1)** — Research: vidya entry before implementation
 2. Work phase — implement in Cyrius, test, benchmark
-3. `cyrb build` — verify compilation
-4. `cyrb test` — run .tcyr test files (when v2.0 lands; until then, test programs in `programs/`)
+3. `cyrius build` — verify compilation
+4. `cyrius test` — run .tcyr test files
 5. Documentation — CHANGELOG, roadmap
 6. Version check — VERSION in sync
 

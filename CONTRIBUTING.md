@@ -4,10 +4,10 @@ Thank you for your interest in contributing to Sakshi.
 
 ## Development Setup
 
-1. Install the Cyrius compiler (cc2)
+1. Install the Cyrius compiler (3.2.0+)
 2. Clone this repository
-3. `cyrb build` to compile
-4. `cyrb test` to run tests
+3. `cyrius build` to compile
+4. `cyrius test` to run tests
 
 ## Code Style
 

@@ -2,18 +2,17 @@
 set -eu
 
 # Run sakshi test suite (.tcyr files)
-# Expects: build/cc2 and build/cyrb available
 
-if [ -n "${CYRB:-}" ]; then
-  CYRB="$CYRB"
-elif command -v cyrb >/dev/null 2>&1; then
-  CYRB="cyrb"
-elif [ -x "$HOME/.cyrius/bin/cyrb" ]; then
-  CYRB="$HOME/.cyrius/bin/cyrb"
-elif [ -x "./build/cyrb" ]; then
-  CYRB="./build/cyrb"
+if [ -n "${CYRIUS:-}" ]; then
+  CYRIUS="$CYRIUS"
+elif command -v cyrius >/dev/null 2>&1; then
+  CYRIUS="cyrius"
+elif [ -x "$HOME/.cyrius/bin/cyrius" ]; then
+  CYRIUS="$HOME/.cyrius/bin/cyrius"
+elif [ -x "./build/cyrius" ]; then
+  CYRIUS="./build/cyrius"
 else
-  echo "error: cyrb not found" >&2; exit 1
+  echo "error: cyrius not found" >&2; exit 1
 fi
 BUILD_DIR="${BUILD_DIR:-./build}"
 
@@ -23,7 +22,7 @@ FAIL=0
 for tcyr in tests/*.tcyr; do
   name=$(basename "$tcyr" .tcyr)
   echo "--- $name ---"
-  "$CYRB" build "$tcyr" "$BUILD_DIR/$name"
+  "$CYRIUS" build "$tcyr" "$BUILD_DIR/$name"
   if "$BUILD_DIR/$name" 2>&1; then
     echo "PASS: $name"
   else
