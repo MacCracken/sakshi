@@ -1,6 +1,6 @@
 # Sakshi Development Roadmap
 
-> **v0.5.0** released. Dual-profile distribution, CI/release pipeline, 12 tests passing.
+> **v0.8.0** in progress. Cyrius 3.2.0 upgrade, language modernization.
 
 ## v0.5.0 — Released
 
@@ -61,6 +61,18 @@
 
 ---
 
+## v0.8.0 — Cyrius 3.2.0 Upgrade
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | Cyrius compiler target 2.7.2 → 3.2.0 | Done |
+| 2 | Slim profile: var constants → enums (bug #16 workaround removed) | Done |
+| 3 | `match` expressions for level-to-string dispatch | Done |
+| 4 | `_sk_level_str` centralized helper (full + modular) | Done |
+| 5 | CI/release workflows updated | Done |
+
+---
+
 ## v1.0.0 — Stable
 
 | # | Item | Status |
@@ -73,15 +85,16 @@
 
 ---
 
-## Post-v1.0 — Blocked on Cyrius Compiler
+## Post-v1.0 — Future Work
 
-Items from P(-1) research that require compiler features not yet available.
+Items from P(-1) research. Some previously blocked on compiler features.
 
-| # | Item | Requires | Source |
-|---|------|----------|--------|
-| 1 | Compile-time log level elimination | `#if` value-comparison directive | Rust `log`, Linux kernel |
-| 2 | Deferred formatting (string ID + raw args) | Compiler string interning | Embedded Rust defmt |
-| 3 | Per-module log levels | Module identity system | LTTng, Tokio tracing |
-| 4 | Per-CPU ring buffers | CPU-affinity primitives | Linux ftrace |
-| 5 | rdtsc/CNTVCT_EL0 cycle counter timestamps | Bare-metal TSC access | ftrace, LTTng |
-| 6 | Structured typed fields (key-value per event) | Generics or compile-time layout | OTel, Tokio tracing |
+| # | Item | Requires | Status | Source |
+|---|------|----------|--------|--------|
+| 1 | Compile-time log level elimination | `#if` value-comparison + `#define` config | **Unblocked** (Cyrius 3.x has `#if`) — needs config to use `#define` instead of `#ref` vars | Rust `log`, Linux kernel |
+| 2 | `defer`-based cleanup patterns | `defer` statement | **Unblocked** (Cyrius 3.2.0) — document `defer { sakshi_output_file_close(); }` pattern for consumers | Cyrius 3.2.0 |
+| 3 | Deferred formatting (string ID + raw args) | Compiler string interning | Blocked | Embedded Rust defmt |
+| 4 | Per-module log levels | Module identity system | Blocked | LTTng, Tokio tracing |
+| 5 | Per-CPU ring buffers | CPU-affinity primitives | Blocked | Linux ftrace |
+| 6 | rdtsc/CNTVCT_EL0 cycle counter timestamps | Bare-metal TSC access | Blocked | ftrace, LTTng |
+| 7 | Structured typed fields (key-value per event) | Generics or compile-time layout | Blocked | OTel, Tokio tracing |

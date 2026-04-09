@@ -5,7 +5,16 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - Unreleased
+## [0.8.0] - Unreleased
+
+### Changed
+
+- **Cyrius 3.2.0** — upgraded compiler target from 2.7.2 to 3.2.0
+- **Slim profile uses enums** — `sakshi.cyr` constants converted from `var` declarations to proper `enum` types, matching the full profile (bug #16 workaround removed)
+- **`match` for level dispatch** — replaced `if` chains with `match` expressions in both distribution profiles and modular source
+- **`_sk_level_str` helper** — centralized level-to-string mapping (full profile + modular src) using `match`, covers log levels + span actions
+
+## [0.7.0]
 
 ### Added
 
