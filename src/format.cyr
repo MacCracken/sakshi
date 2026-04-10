@@ -34,8 +34,10 @@ fn _sk_memset(dst, val, n) {
 # ================================================================
 
 # clock_gettime constants (x86_64 Linux)
-var _SK_SYS_CLOCK_GETTIME = 228;
-var _SK_CLOCK_MONOTONIC_RAW = 4;
+enum _SkSyscall {
+    _SK_SYS_CLOCK_GETTIME = 228;
+    _SK_CLOCK_MONOTONIC_RAW = 4;
+}
 
 # Get monotonic nanoseconds
 fn _sk_now_ns() {
@@ -172,7 +174,9 @@ fn _sk_fmt_span(buf, cap, action, action_len, name, name_len, elapsed_ns) {
 # Followed by msg_len bytes of message data (variable length).
 # Total event size: 12 + msg_len
 
-var _SK_BIN_HDR_SIZE = 12;
+enum _SkBinConst {
+    _SK_BIN_HDR_SIZE = 12;
+}
 
 # Write a binary event header into buf. Returns header size (12).
 fn _sk_bin_write_hdr(buf, timestamp, level, category, msg_len) {

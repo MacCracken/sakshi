@@ -66,7 +66,9 @@ fn _sk_write_file(buf, len) {
 var _sk_ring_buf[4096];
 var _sk_ring_write: i64 = 0;
 var _sk_ring_count: i64 = 0;
-var _SK_RING_MASK = 0xFFF;
+enum _SkRingConst {
+    _SK_RING_MASK = 0xFFF;
+}
 
 # Enable ring buffer output
 fn sakshi_output_buffer() {

@@ -3,13 +3,22 @@
 # Routes through _sk_emit_span: binary for buffer/UDP, text for stderr/file.
 # Fixed-depth span stack — no heap allocation.
 # Depends: format.cyr, output.cyr, trace.cyr (included via lib.cyr)
+#
+# Recommended usage with defer (Cyrius >= 3.2.0):
+#   fn my_function() {
+#       sakshi_span_enter("my_function", 11);
+#       defer { sakshi_span_exit(); }
+#       # ... function body — span_exit guaranteed on return
+#   }
 
 # Span stack — fixed depth of 16.
 # Each entry: { name_ptr: i64, name_len: i64, start_ns: i64 } = 24 bytes
 # Total: 16 * 24 = 384 bytes
 var _sk_span_stack[384];
 var _sk_span_depth: i64 = 0;
-var _SK_MAX_SPANS = 16;
+enum _SkSpanConst {
+    _SK_MAX_SPANS = 16;
+}
 
 # Enter a span — push name + timestamp onto the stack
 fn sakshi_span_enter(name, name_len) {

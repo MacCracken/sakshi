@@ -5,6 +5,14 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-04-09
+
+### Changed
+- **Cyrius 3.2.6** — toolchain pinned to v3.2.6 (composable `#derive(Serialize)`, json_parse fix)
+- **Modular src/ constants → enums** — `format.cyr`, `span.cyr`, `output.cyr` converted `var` constants to `enum` types, eliminating 5 global variable slots (matches distribution profile pattern)
+- **Slim profile refactored** — `sakshi.cyr` now uses `_sk_level_str` helper and `_sk_fmt_line` formatter, matching full profile structure
+- **`defer` pattern documented** — `span.cyr` documents recommended `defer { sakshi_span_exit(); }` usage for guaranteed span cleanup (Cyrius >= 3.2.0)
+
 ## [0.8.2] - 2026-04-09
 
 ### Changed
