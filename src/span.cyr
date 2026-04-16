@@ -6,10 +6,10 @@
 #
 # Recommended usage with defer (Cyrius >= 3.2.0):
 #   fn my_function() {
-#       sakshi_span_enter("my_function", 11);
-#       defer { sakshi_span_exit(); }
-#       # ... function body — span_exit guaranteed on return
-#   }
+    #       sakshi_span_enter("my_function", 11);
+    #       defer { sakshi_span_exit(); }
+    #       # ... function body — span_exit guaranteed on return
+    #   }
 
 # Span stack — fixed depth of 16.
 # Each entry: { name_ptr: i64, name_len: i64, start_ns: i64 } = 24 bytes
