@@ -8,7 +8,7 @@
 - **License**: GPL-3.0-only
 - **Language**: Cyrius (sovereign systems language, compiled by cc3)
 - **Version**: SemVer, version file at `VERSION`
-- **Status**: v0.9.0 — implemented, approaching v1.0
+- **Status**: v0.9.1 — security hardening, approaching v1.0
 - **Genesis repo**: [agnosticos](https://github.com/MacCracken/agnosticos)
 - **Standards**: [First-Party Standards](https://github.com/MacCracken/agnosticos/blob/main/docs/development/applications/first-party-standards.md)
 - **Shared crates**: [shared-crates.md](https://github.com/MacCracken/agnosticos/blob/main/docs/development/applications/shared-crates.md)
