@@ -5,7 +5,7 @@ description = "Sakshi — the silent witness. Tracing, error handling, and struc
 license = "GPL-3.0-only"
 repository = "https://github.com/MacCracken/sakshi"
 language = "cyrius"
-cyrius = "5.1.12"
+cyrius = "5.1.13"
 
 [build]
 entry = "programs/smoke.cyr"

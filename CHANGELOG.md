@@ -19,8 +19,8 @@ Flat patra-style refactor. **Breaking** — the hand-maintained `sakshi.cyr` (sl
 
 ### Changed
 
-- **Manifest migrated `cyrius.toml` → `cyrius.cyml`** — adds `cyrius = "5.1.12"` pin, `[build]` (entry=`programs/smoke.cyr`, defines=`SAKSHI_SMOKE`), and `[deps].stdlib` list.
-- **Toolchain bumped to Cyrius 5.1.12** — `.cyrius-toolchain` updated from 5.1.1. Tests and benchmarks verified on the new toolchain (err_new 6ns, err_unpack 11ns — unchanged from 1.0.0 baseline).
+- **Manifest migrated `cyrius.toml` → `cyrius.cyml`** — adds `cyrius = "5.1.13"` pin, `[build]` (entry=`programs/smoke.cyr`, defines=`SAKSHI_SMOKE`), and `[deps].stdlib` list.
+- **Toolchain bumped to Cyrius 5.1.13** — `.cyrius-toolchain` updated from 5.1.1. Tests and benchmarks verified on the new toolchain (err_new 6ns, err_unpack 11ns — unchanged from 1.0.0 baseline).
 - **CI workflow rewritten** — reads `.cyrius-toolchain` at runtime (was hardcoded `CYRIUS_VERSION: 3.2.6` env — stale). Adds `cyrius deps`, per-file `cyrius lint`, `CYRIUS_DCE=1 cyrius build` + smoke run, `cyrius test tests/tcyr/sakshi.tcyr`, and `cyrius bench tests/bcyr/sakshi.bcyr`. Security scan and docs job retained.
 - **Release workflow** — runs the same DCE build + smoke as CI before packaging, and verifies `cyrius.cyml` version matches the tag (in addition to `VERSION`).
 
