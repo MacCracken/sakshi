@@ -108,6 +108,7 @@ fn _sk_now_ns() {
     return load64(&ts) * 1000000000 + load64(&ts + 8);
 }
 
+# Convert integer to decimal string in buf. buf must be >= 24 bytes.
 fn _sk_fmt_int(n, buf) {
     var bi = 23;
     var neg: i64 = 0;
@@ -258,12 +259,13 @@ fn _sk_write_udp_event(level, category, msg, msg_len) {
     if (_sk_udp_fd < 0) { return 0; }
     var ts = _sk_now_ns();
     var pkt[268];
+    var pml = msg_len;
+    if (pml > 256) { pml = 256; }
+
     store64(&pkt, ts);
     store8(&pkt + 8, level);
     store8(&pkt + 9, category);
-    store16(&pkt + 10, msg_len);
-    var pml = msg_len;
-    if (pml > 256) { pml = 256; }
+    store16(&pkt + 10, pml);
     _sk_memcpy(&pkt + 12, msg, pml);
     syscall(44, _sk_udp_fd, &pkt, 12 + pml, 0, &_sk_udp_addr, 16);
     return 0;
@@ -404,7 +406,8 @@ fn sakshi_set_output_fd(fd) {
     return 0;
 }
 
-# Open a file for log output
+# Open a file for log output.
+# path must be a trusted, hardcoded or config-derived value — no user input.
 fn sakshi_output_file(path) {
     var fd = syscall(2, path, 1089, 0x1A4);
     if (fd < 0) { return fd; }
@@ -423,7 +426,8 @@ fn sakshi_output_file_close() {
 # Switch to ring buffer output mode
 fn sakshi_output_buffer() { _sk_output_target = SK_OUT_BUFFER; return 0; }
 
-# Read raw bytes from ring buffer
+# Read raw bytes from ring buffer.
+# Caller must ensure dst points to a buffer of at least max_len bytes.
 fn sakshi_ring_read_raw(dst, max_len) {
     var avail = _sk_ring_write;
     if (avail > 4096) { avail = 4096; }

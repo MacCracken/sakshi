@@ -4,60 +4,152 @@
 
 **Sakshi** (Sanskrit: साक्षी — witness) — Tracing, error handling, and structured logging for the Cyrius ecosystem.
 
-- **Type**: Foundational library — every AGNOS Cyrius project depends on this
+- **Type**: Shared library
 - **License**: GPL-3.0-only
-- **Language**: Cyrius (native — not ported from Rust)
+- **Language**: Cyrius (sovereign systems language, compiled by cc3)
 - **Version**: SemVer, version file at `VERSION`
-- **Status**: Implemented, approaching v1.0
+- **Status**: v0.9.0 — implemented, approaching v1.0
+- **Genesis repo**: [agnosticos](https://github.com/MacCracken/agnosticos)
+- **Standards**: [First-Party Standards](https://github.com/MacCracken/agnosticos/blob/main/docs/development/applications/first-party-standards.md)
+- **Shared crates**: [shared-crates.md](https://github.com/MacCracken/agnosticos/blob/main/docs/development/applications/shared-crates.md)
 
-## Genesis Layer
+## Scaffolding
 
-This project is part of **AGNOS** — an AI-native operating system. The genesis repo at `/home/macro/Repos/agnosticos` owns system-level docs, roadmap, and CI/CD.
+**This project was scaffolded using:**
+- New project: `cyrius init sakshi` then `cyrius init --ci`
 
-- **Recipes**: `MacCracken/zugot` (Hebrew: pairs that enter the ark)
-- **Standards**: `agnosticos/docs/development/applications/first-party-standards.md`
-- **Shared crates**: `agnosticos/docs/development/applications/shared-crates.md`
+**Do not manually create project structure.** Use the tools. They ensure consistency with first-party standards across all AGNOS repos. If the tools are missing something, fix the tools.
+
+## Consumers
+
+| Project | Usage |
+|---------|-------|
+| Every AGNOS Cyrius project | Foundation include — tracing, error handling, structured logging |
+
+## Architecture
+
+```
+src/
+  lib.cyr         — public API (includes all modules, auto-init)
+  error.cyr       — packed i64 error codes (code + category + context)
+  trace.cyr       — log levels (error/warn/info/debug/trace), structured output
+  span.cyr        — enter/exit function tracking with nanosecond timing
+  format.cyr      — fixed-buffer message formatting, binary event format
+  output.cyr      — output targets (stderr, file, ring buffer, UDP)
+  config.cyr      — #ref TOML config at compile time
+```
+
+Distribution profiles:
+- `sakshi.cyr` — slim single-file (stderr + file output only, no spans/ring/UDP)
+- `sakshi_full.cyr` — full single-file (all features)
 
 ## Development Process
 
-### Work Loop
+### P(-1): Scaffold Hardening (before any new features)
 
-1. **P(-1)** — Research: vidya entry before implementation
-2. Work phase — implement in Cyrius, test, benchmark
-3. `cyrius build` — verify compilation
-4. `cyrius test` — run .tcyr test files
-5. Documentation — CHANGELOG, roadmap
-6. Version check — VERSION in sync
+0. Read roadmap, CHANGELOG, and open issues — know what was intended
+1. Cleanliness check: `cyrius build`, `cyrlint`, all tests pass
+2. Benchmark baseline: `cyrius bench`
+3. Internal deep review — gaps, optimizations, correctness, docs
+4. External research — domain completeness, best practices
+5. **Security audit** — review all input handling, syscall usage, buffer sizes, pointer validation. Run against known CVE patterns for the domain. File findings in `docs/audit/YYYY-MM-DD-audit.md`
+6. Additional tests/benchmarks from findings
+7. Post-review benchmarks — prove the wins
+8. Documentation audit
+9. Repeat if heavy
+
+### Work Loop / Working Loop (continuous)
+
+1. Work phase — new features, roadmap items, bug fixes
+2. Build check: `cyrius build`
+3. Test + benchmark additions for new code
+4. Internal review — performance, memory, correctness
+5. **Security check** — any new syscall usage, user input handling, buffer allocation reviewed for safety
+6. Documentation — update CHANGELOG, roadmap, docs
+7. Version check — VERSION, cyrius.toml in sync
+8. Return to step 1
+
+### Security Hardening (before release)
+
+Run a dedicated security audit pass before any version release:
+
+1. **Input validation** — every function that accepts external data (user input, file content, network data) validates bounds, types, and ranges before use
+2. **Buffer safety** — every `var buf[N]` and `alloc(N)` verified: N is in BYTES, max access offset < N, no adjacent-variable overflow
+3. **Syscall review** — every `syscall()` and `sys_*()` call reviewed: arguments validated, return values checked, error paths handled
+4. **Pointer validation** — no raw pointer dereference of untrusted input without bounds checking
+5. **No command injection** — no `sys_system()` or `exec_cmd()` with unsanitized user input. Use `exec_vec()` with explicit argv instead
+6. **No path traversal** — file paths from external input validated against allowed directories. No `../` escape
+7. **Known CVE check** — review dependencies and patterns against current CVE databases
+8. **File findings** — all issues documented in `docs/audit/YYYY-MM-DD-audit.md` with severity, file, line, and fix
+
+Severity levels:
+- **CRITICAL** — exploitable immediately, remote or privilege escalation
+- **HIGH** — exploitable with moderate effort
+- **MEDIUM** — exploitable under specific conditions
+- **LOW** — defense-in-depth improvement
+
+### Closeout Pass (before every minor/major bump)
+
+Run a closeout pass before tagging x.Y.0 or x.0.0. Ship as the last patch of the current minor (e.g. 0.9.x before 1.0.0):
+
+1. **Full test suite** — all .tcyr pass, zero failures
+2. **Benchmark baseline** — `cyrius bench`, save CSV for comparison
+3. **Dead code audit** — check for unused functions, remove dead source code
+4. **Stale comment sweep** — grep for old version refs, outdated TODOs
+5. **Security re-scan** — quick grep for new `sys_system`, unchecked writes, unsanitized input, buffer size mismatches
+6. **Downstream check** — all consumers that depend on this crate still build and pass tests with the new version
+7. **CHANGELOG/roadmap sync** — all docs reflect current state, version numbers consistent
+8. **Version verify** — VERSION, cyrius.toml, CHANGELOG header all match
+9. **Full build from clean** — `rm -rf build && cyrius deps && cyrius build` passes clean
 
 ### Task Sizing
 
-- **Low/Medium**: Batch freely
-- **Large**: Small bites, verify each
-- **If unsure**: Treat as large
+- **Low/Medium effort**: Batch freely — multiple items per work loop cycle
+- **Large effort**: Small bites only — break into sub-tasks, verify each before moving to the next
+- **If unsure**: Treat it as large
+
+## Key Principles
+
+- **Correctness is the optimum sovereignty** — if it's wrong, you don't own it, the bugs own you
+- Test after EVERY change, not after the feature is done
+- ONE change at a time — never bundle unrelated changes
+- Research before implementation — check vidya for existing patterns
+- Study working programs (`cyrius/programs/*.cyr`) before writing new code
+- Programs must call main() at top level: `var exit_code = main(); syscall(60, exit_code);`
+- `cyrius build` handles everything — NEVER use raw `cat file | cc3`
+- Source files only need project includes — deps auto-resolve from cyrius.toml
+- Every buffer declaration is a contract: `var buf[N]` = N BYTES, not N entries
+- Zero heap allocation on the hot path — all error creation and trace output uses fixed buffers
+- Packed error format — error code + category in a single i64, matching agnosys pattern
+- Compiled binary contribution target: 2-3KB
+- No external dependencies — this is the foundation everything else builds on
 
 ## DO NOT
 
 - **Do not commit or push** — the user handles all git operations
 - **NEVER use `gh` CLI** — use `curl` to GitHub API only
 - Do not add unnecessary dependencies (there should be close to zero)
+- Do not skip tests before claiming changes work
+- Do not use `sys_system()` with unsanitized input — command injection risk
+- Do not trust external data (file content, network input, user args) without validation
 
-## Architecture
+## Documentation Structure
 
 ```
-src/
-  lib.cyr         — public API
-  error.cyr       — packed i64 error codes (code + category)
-  trace.cyr       — log levels, structured output
-  span.cyr        — enter/exit timing
-  format.cyr      — message formatting, fixed buffers
-  output.cyr      — serial, file, buffer, network targets
-  config.cyr      — #ref TOML config at compile time
+Root files (required):
+  README.md, CHANGELOG.md, CLAUDE.md, CONTRIBUTING.md,
+  SECURITY.md, CODE_OF_CONDUCT.md, VERSION, LICENSE
+
+docs/ (required):
+  development/roadmap.md — completed, backlog, future
+
+docs/ (when earned):
+  adr/ — architectural decision records
+  audit/ — security audit reports (YYYY-MM-DD-audit.md)
+  guides/ — usage patterns, integration
+  sources/ — academic/domain citations
 ```
 
-## Key Design Constraints
+## CHANGELOG Format
 
-- **Zero heap allocation on hot path** — all error creation and trace output uses fixed buffers
-- **Packed error format** — error code + category in a single i64, matching agnosys pattern
-- **Compile-time config** — `#ref` loads TOML log config, no runtime parsing
-- **Target size** — compiled binary contribution: 2-3KB
-- **No external dependencies** — this is the foundation everything else builds on
+Follow [Keep a Changelog](https://keepachangelog.com/). Performance claims MUST include benchmark numbers. Breaking changes get a **Breaking** section with migration guide. Security fixes get a **Security** section with CVE references where applicable.

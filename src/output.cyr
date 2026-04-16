@@ -30,6 +30,7 @@ fn _sk_write_stderr(buf, len) {
 var _sk_file_fd: i64 = 0 - 1;
 
 # Open a file for append-mode logging. Returns fd or negative on error.
+# path must be a trusted, hardcoded or config-derived value — no user input.
 # flags: O_WRONLY | O_CREAT | O_APPEND = 1 | 64 | 1024 = 1089
 # mode: 0644 = 0x1A4
 fn sakshi_output_file(path) {
@@ -123,6 +124,7 @@ fn _sk_write_ring_event(level, category, msg, msg_len) {
 
 # Read raw ring buffer bytes into dst. Returns bytes read.
 # Reads the most recent data (up to 4096 bytes).
+# Caller must ensure dst points to a buffer of at least max_len bytes.
 fn sakshi_ring_read_raw(dst, max_len) {
     var avail = _sk_ring_write;
     if (avail > 4096) { avail = 4096; }
@@ -244,13 +246,13 @@ fn _sk_write_udp_event(level, category, msg, msg_len) {
 
     # Build packet in a stack buffer (12 header + msg, max 256)
     var pkt[268];
+    var pkt_msg_len = msg_len;
+    if (pkt_msg_len > 256) { pkt_msg_len = 256; }
+
     store64(&pkt, ts);
     store8(&pkt + 8, level);
     store8(&pkt + 9, category);
-    store16(&pkt + 10, msg_len);
-
-    var pkt_msg_len = msg_len;
-    if (pkt_msg_len > 256) { pkt_msg_len = 256; }
+    store16(&pkt + 10, pkt_msg_len);
     _sk_memcpy(&pkt + 12, msg, pkt_msg_len);
 
     var total = 12 + pkt_msg_len;

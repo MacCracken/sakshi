@@ -72,6 +72,7 @@ fn _sk_now_ns() {
     return load64(&ts) * 1000000000 + load64(&ts + 8);
 }
 
+# Convert integer to decimal string in buf. buf must be >= 24 bytes.
 fn _sk_fmt_int(n, buf) {
     var bi = 23;
     var neg: i64 = 0;
@@ -151,7 +152,8 @@ fn _sk_write(buf, len) {
 # Set the stderr file descriptor for output
 fn sakshi_set_output_fd(fd) { _sk_stderr_fd = fd; return 0; }
 
-# Open a file for log output (append mode, tee with stderr)
+# Open a file for log output (append mode, tee with stderr).
+# path must be a trusted, hardcoded or config-derived value — no user input.
 fn sakshi_output_file(path) {
     var fd = syscall(2, path, 1089, 0x1A4);
     if (fd < 0) { return fd; }
