@@ -5,6 +5,29 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-04-15
+
+### Security
+
+- **SA-001 (CRITICAL): UDP header msg_len unclamped** — `_sk_write_udp_event` wrote the original unclamped `msg_len` into the binary packet header while clamping only the memcpy. A receiver decoding the packet would read past the payload. Fixed: header now contains the clamped value. (`src/output.cyr`, `sakshi_full.cyr`)
+
+### Fixed
+
+- **`_sk_apply_config` now applies output target** — `config.cyr` was loading `sk_cfg_output_target` from `sakshi.toml` but never applying it at init. Output target config is now honored.
+- **Slim profile `_sk_file_fd` init** — initialized to `-1` instead of `0` (stdin). `sakshi_output_file_close` also resets to `-1`. Prevents accidental write to fd 0 if close was called without a prior open.
+
+### Added
+
+- **Security audit** — `docs/audit/2026-04-15-audit.md` — 11 findings (1 CRITICAL, 3 HIGH, 4 MEDIUM, 3 LOW), CVE/0day pattern review against 7 known attack classes
+- **Test coverage** — level filtering (debug/trace suppressed at INFO), TRACE level, `sakshi_set_output_fd` redirect, error edge cases (max values, overflow clamping) in slim test; span overflow (16-deep fill + reject 17th), level filtering, fd redirect in full test
+- **API contract documentation** — `sakshi_ring_read_raw` (caller buffer responsibility), `sakshi_output_file` (trusted path only), `_sk_fmt_int` (24-byte minimum buffer)
+
+### Changed
+
+- **CLAUDE.md** — aligned with agnosticos first-party standards template (P(-1), work loop, security hardening, closeout pass processes)
+- **Roadmap** — added v0.9.1 security follow-up milestone (7 deferred items), updated v1.0.0 prerequisites
+- **Architecture docs** — fixed stale references: "serial" → "stderr", removed phantom `[module]` trace field, corrected `sakshi_error` → `sakshi_err_new`
+
 ## [0.9.0] - 2026-04-09
 
 ### Changed

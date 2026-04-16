@@ -1,8 +1,8 @@
 # Sakshi Development Roadmap
 
-> **v0.9.0** current. All core modules implemented. Targeting v1.0 stability.
+> **v0.9.1** current. Security hardening pass complete. Targeting v1.0 stability.
 
-## v0.9.1 — Security Hardening Follow-up
+## v0.9.2 — Security Hardening Follow-up
 
 Items deferred from the 2026-04-15 security audit. See `docs/audit/2026-04-15-audit.md` for full details.
 
