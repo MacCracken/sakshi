@@ -1,45 +1,6 @@
 # Sakshi Development Roadmap
 
-> **v0.9.3** current. Features, performance, stdlib integration. Part of Cyrius stdlib.
-
-## v1.0.0 — Stable
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | All security hardening items resolved | Done (v0.9.1 + v0.9.2) |
-| 2 | Closeout pass (full checklist per CLAUDE.md) | Not started |
-
-Integration testing is the responsibility of consumer crates — sakshi ships as part of stdlib.
-
----
-
-## Completed
-
-### v0.9.3 — Features + Performance
-
-| # | Item | Source | Status |
-|---|------|--------|--------|
-| 1 | SK_FATAL log level | External research (log.cyr parity) | Done |
-| 2 | Trace ID correlation token | External research (OTel, Rust tracing) | Done |
-| 3 | Binary format metadata event | External research (LTTng CTF) | Done |
-| 4 | Ring buffer header write optimization | Performance review | Done |
-| 5 | Double timestamp elimination on text path | Performance review | Done |
-| 6 | `_sk_memcpy` 8-byte bulk copy | Performance review | Done |
-| 7 | Toolchain pinned to 4.10.3, lib symlink updated | Infrastructure | Done |
-
-### v0.9.2 — Security Hardening Follow-up
-
-All items from the 2026-04-15 security audit. See `docs/audit/2026-04-15-audit.md`.
-
-| # | Item | Audit Ref | Status |
-|---|------|-----------|--------|
-| 1 | Ring decode: `msg_len > 4084` sanity guard | SA-004 | Done |
-| 2 | Remove dead `_sk_strlen` | SA-009 | Done |
-| 3 | `fd >= 0` check in `sakshi_set_output_fd` | SA-007 | Done |
-| 4 | `clock_gettime` return value check | SA-010 | Done |
-| 5 | Document single-threaded-only constraint | CVE review | Done |
-| 6 | Document UDP transport unencrypted/unauthenticated | CVE review | Done |
-| 7 | Document 292-year timestamp overflow limit | SA-005 | Done |
+> **v1.0.0** stable. Part of Cyrius stdlib (v5.1.1+). 54 tests, security audited, zero-alloc.
 
 ---
 

@@ -1,6 +1,6 @@
 # sakshi.cyr — tracing and error handling (stderr profile)
 # Single-file distribution. Zero heap allocation. No external dependencies.
-# Version: 0.9.3
+# Version: 1.0.0
 #
 # Minimal global footprint — no ring buffer, no UDP, no span stack.
 # For the full version (spans, ring buffer, UDP): include "lib/sakshi_full.cyr"

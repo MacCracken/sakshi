@@ -1,6 +1,6 @@
 # sakshi.cyr — tracing, error handling, and structured logging
 # Single-file distribution. Zero heap allocation. No external dependencies.
-# Version: 0.9.3
+# Version: 1.0.0
 #
 # Usage: include "lib/sakshi_full.cyr"
 #

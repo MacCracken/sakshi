@@ -5,6 +5,25 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-04-16
+
+**Stable release.** Zero-alloc tracing, error handling, and structured logging for the Cyrius ecosystem. Ships as part of Cyrius stdlib since v5.1.1.
+
+### Changed
+
+- **Toolchain pinned to Cyrius 5.1.1** — stdlib integration verified (bundled sakshi 0.9.3, log.cyr level mapping fixed, output routing fixed, sakshi_sakshi.cyr duplicate removed)
+- **54 tests passing** — 19 slim profile, 35 full profile
+
+### Summary since v0.5.0
+
+- 6 log levels: FATAL, ERROR, WARN, INFO, DEBUG, TRACE
+- Packed i64 error codes with 32-bit context field (8 categories, 8 codes)
+- 16-deep span stack with nanosecond timing and trace ID correlation
+- 4 output targets: stderr, file, 4KB ring buffer, UDP
+- Self-describing binary format with metadata event
+- Security audited (11 findings, all resolved)
+- Zero heap allocation, zero external dependencies
+
 ## [0.9.3] - 2026-04-15
 
 ### Breaking
