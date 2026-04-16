@@ -1,26 +1,26 @@
 # Sakshi Development Roadmap
 
-> **v0.9.1** current. Security hardening pass complete. Targeting v1.0 stability.
+> **v0.9.2** current. All security audit items resolved. Targeting v1.0 stability.
 
-## v0.9.2 — Security Hardening Follow-up
+## v0.9.2 — Security Hardening Follow-up (complete)
 
-Items deferred from the 2026-04-15 security audit. See `docs/audit/2026-04-15-audit.md` for full details.
+All items from the 2026-04-15 security audit. See `docs/audit/2026-04-15-audit.md`.
 
-| # | Item | Severity | Audit Ref | Status |
-|---|------|----------|-----------|--------|
-| 1 | Ring decode: add `msg_len > 4084` sanity guard | HIGH | SA-004 | Not started |
-| 2 | Remove dead `_sk_strlen` or add max_len param | LOW | SA-009 | Not started |
-| 3 | Optional `fd >= 0` check in `sakshi_set_output_fd` | MEDIUM | SA-007 | Not started |
-| 4 | Optional `clock_gettime` return value check | LOW | SA-010 | Not started |
-| 5 | Document single-threaded-only constraint | — | CVE review | Not started |
-| 6 | Document UDP transport is unencrypted/unauthenticated | — | CVE review | Not started |
-| 7 | Document 292-year timestamp overflow limit | MEDIUM | SA-005 | Not started |
+| # | Item | Audit Ref | Status |
+|---|------|-----------|--------|
+| 1 | Ring decode: `msg_len > 4084` sanity guard | SA-004 | Done |
+| 2 | Remove dead `_sk_strlen` | SA-009 | Done |
+| 3 | `fd >= 0` check in `sakshi_set_output_fd` | SA-007 | Done |
+| 4 | `clock_gettime` return value check | SA-010 | Done |
+| 5 | Document single-threaded-only constraint | CVE review | Done |
+| 6 | Document UDP transport unencrypted/unauthenticated | CVE review | Done |
+| 7 | Document 292-year timestamp overflow limit | SA-005 | Done |
 
 ## v1.0.0 — Stable
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | All v0.9.1 hardening items resolved | Not started |
+| 1 | All security hardening items resolved | Done (v0.9.1 + v0.9.2) |
 | 2 | Integration tested across 3+ consumer crates | Not started |
 | 3 | Closeout pass (full checklist per CLAUDE.md) | Not started |
 

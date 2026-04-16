@@ -16,6 +16,13 @@
 #           sakshi_ring_clear, sakshi_ring_event_count, sakshi_ring_decode_event,
 #           sakshi_output_udp, sakshi_output_udp_close, sakshi_ipv4
 #   Config: compile-time via #ref "sakshi.toml"
+#
+# Constraints:
+#   - Single-threaded only. No synchronization primitives — concurrent
+#     access to global state (log level, ring buffer, span stack) is undefined.
+#   - UDP output is unencrypted and unauthenticated. Do not send sensitive
+#     data over UDP without an application-layer security wrapper.
+#   - Monotonic timestamps overflow i64 after ~292 years of continuous uptime.
 
 # Internal helpers (format, output) first — other modules depend on them
 include "src/format.cyr"

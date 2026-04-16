@@ -6,13 +6,6 @@
 # Primitives
 # ================================================================
 
-# Length of null-terminated string
-fn _sk_strlen(s) {
-    var n: i64 = 0;
-    while (load8(s + n) != 0) { n = n + 1; }
-    return n;
-}
-
 # Copy n bytes from src to dst
 fn _sk_memcpy(dst, src, n) {
     for (var i = 0; i < n; i = i + 1) {
@@ -39,10 +32,12 @@ enum _SkSyscall {
     _SK_CLOCK_MONOTONIC_RAW = 4;
 }
 
-# Get monotonic nanoseconds
+# Get monotonic nanoseconds. Returns 0 on failure.
+# Overflow after ~292 years of uptime (i64 limit).
 fn _sk_now_ns() {
     var ts[2];
-    syscall(_SK_SYS_CLOCK_GETTIME, _SK_CLOCK_MONOTONIC_RAW, &ts);
+    var ret = syscall(_SK_SYS_CLOCK_GETTIME, _SK_CLOCK_MONOTONIC_RAW, &ts);
+    if (ret < 0) { return 0; }
     return load64(&ts) * 1000000000 + load64(&ts + 8);
 }
 

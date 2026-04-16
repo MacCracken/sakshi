@@ -171,6 +171,12 @@ fn sakshi_ring_decode_event(buf, buf_len, dst, dst_cap, out_text_len) {
     var cat = load8(buf + 9);
     var msg_len = load16(buf + 10);
 
+    # Sanity: max message that fits in a 4KB ring = 4096 - 12 header bytes
+    if (msg_len > 4084) {
+        store64(out_text_len, 0);
+        return 0;
+    }
+
     var event_size = _SK_BIN_HDR_SIZE + msg_len;
     if (buf_len < event_size) {
         store64(out_text_len, 0);
@@ -209,6 +215,7 @@ var _sk_udp_fd: i64 = 0 - 1;
 var _sk_udp_addr[16];
 
 # Open a UDP socket for log output.
+# WARNING: UDP transport is unencrypted and unauthenticated.
 # ip: 32-bit IPv4 address in network byte order
 # port: 16-bit port in host byte order
 fn sakshi_output_udp(ip, port) {
@@ -336,7 +343,9 @@ fn sakshi_set_output(target) {
 }
 
 # Legacy compat: set fd directly (forces stderr target mode)
+# fd must be a valid open file descriptor (>= 0).
 fn sakshi_set_output_fd(fd) {
+    if (fd < 0) { return 0 - 1; }
     _sk_stderr_fd = fd;
     _sk_output_target = SK_OUT_STDERR;
     return 0;

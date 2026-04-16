@@ -5,6 +5,27 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-04-15
+
+### Security
+
+- **SA-004 (HIGH): Ring decode msg_len sanity guard** — `sakshi_ring_decode_event` now rejects events with `msg_len > 4084` (max message that fits in a 4KB ring buffer). Prevents misaligned decode chains from corrupted ring data. (`src/output.cyr`, `sakshi_full.cyr`)
+- **SA-007 (MEDIUM): fd validation in `sakshi_set_output_fd`** — rejects negative file descriptors, returns -1 on invalid input. Prevents silent log loss from bad fd. (`src/output.cyr`, `sakshi.cyr`, `sakshi_full.cyr`)
+- **SA-010 (LOW): `clock_gettime` return check** — `_sk_now_ns()` now checks syscall return value and falls back to 0 on failure. (`src/format.cyr`, `sakshi.cyr`, `sakshi_full.cyr`)
+
+### Fixed
+
+- **SA-009: Removed dead `_sk_strlen`** — unused function removed from `src/format.cyr` and `sakshi_full.cyr`. Eliminates unbounded loop on non-null-terminated input risk.
+
+### Added
+
+- **Constraints documentation** — all public API headers (`lib.cyr`, `sakshi.cyr`, `sakshi_full.cyr`) now document: single-threaded only, UDP unencrypted/unauthenticated, 292-year timestamp overflow limit
+- **UDP security warning** — `sakshi_output_udp` function comments warn that transport is unencrypted
+
+### Changed
+
+- All 7 deferred items from 2026-04-15 security audit resolved
+
 ## [0.9.1] - 2026-04-15
 
 ### Security

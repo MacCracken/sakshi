@@ -1,6 +1,6 @@
 # sakshi.cyr — tracing, error handling, and structured logging
 # Single-file distribution. Zero heap allocation. No external dependencies.
-# Version: 0.9.1
+# Version: 0.9.2
 #
 # Usage: include "lib/sakshi_full.cyr"
 #
@@ -15,6 +15,11 @@
 #         sakshi_output_buffer(), sakshi_ring_read_raw(dst, max), sakshi_ring_len(),
 #         sakshi_ring_clear(), sakshi_ring_event_count(), sakshi_ring_decode_event(...),
 #         sakshi_output_udp(ip, port), sakshi_output_udp_close(), sakshi_ipv4(a,b,c,d)
+#
+# Constraints:
+#   - Single-threaded only. No synchronization on global state.
+#   - UDP output is unencrypted and unauthenticated.
+#   - Monotonic timestamps overflow i64 after ~292 years of uptime.
 
 # ================================================================
 # Constants (all in enums — zero global variable slots)
@@ -91,20 +96,16 @@ var _sk_span_stack[384];
 # Internal primitives
 # ================================================================
 
-fn _sk_strlen(s) {
-    var n: i64 = 0;
-    while (load8(s + n) != 0) { n = n + 1; }
-    return n;
-}
-
 fn _sk_memcpy(dst, src, n) {
     for (var i = 0; i < n; i = i + 1) { store8(dst + i, load8(src + i)); }
     return dst;
 }
 
+# Returns 0 on failure. Overflow after ~292 years of uptime.
 fn _sk_now_ns() {
     var ts[16];
-    syscall(_SK_SYS_CLOCK_GETTIME, _SK_CLOCK_MONO_RAW, &ts);
+    var ret = syscall(_SK_SYS_CLOCK_GETTIME, _SK_CLOCK_MONO_RAW, &ts);
+    if (ret < 0) { return 0; }
     return load64(&ts) * 1000000000 + load64(&ts + 8);
 }
 
@@ -399,8 +400,9 @@ fn sakshi_err_at_span(code, category) {
 # Set output target (stderr, file, buffer, UDP)
 fn sakshi_set_output(target) { _sk_output_target = target; return 0; }
 
-# Set the stderr file descriptor directly
+# Set the stderr file descriptor directly. fd must be >= 0.
 fn sakshi_set_output_fd(fd) {
+    if (fd < 0) { return 0 - 1; }
     _sk_stderr_fd = fd;
     _sk_output_target = SK_OUT_STDERR;
     return 0;
@@ -454,6 +456,8 @@ fn sakshi_ring_decode_event(buf, buf_len, dst, dst_cap, out_text_len) {
     var ts = load64(buf);
     var level = load8(buf + 8);
     var msg_len = load16(buf + 10);
+    # Sanity: max message that fits in a 4KB ring = 4096 - 12 header bytes
+    if (msg_len > 4084) { store64(out_text_len, 0); return 0; }
     var event_size = _SK_BIN_HDR + msg_len;
     if (buf_len < event_size) { store64(out_text_len, 0); return 0; }
     var ls: i64 = 0;
@@ -474,7 +478,8 @@ fn sakshi_ring_decode_event(buf, buf_len, dst, dst_cap, out_text_len) {
     return event_size;
 }
 
-# Open UDP socket for log output
+# Open UDP socket for log output.
+# WARNING: UDP transport is unencrypted and unauthenticated.
 fn sakshi_output_udp(ip, port) {
     var fd = syscall(41, 2, 2, 0);
     if (fd < 0) { return fd; }
