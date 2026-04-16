@@ -1,8 +1,33 @@
 # Sakshi Development Roadmap
 
-> **v0.9.2** current. All security audit items resolved. Targeting v1.0 stability.
+> **v0.9.3** current. Features, performance, stdlib integration. Part of Cyrius stdlib.
 
-## v0.9.2 — Security Hardening Follow-up (complete)
+## v1.0.0 — Stable
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | All security hardening items resolved | Done (v0.9.1 + v0.9.2) |
+| 2 | Closeout pass (full checklist per CLAUDE.md) | Not started |
+
+Integration testing is the responsibility of consumer crates — sakshi ships as part of stdlib.
+
+---
+
+## Completed
+
+### v0.9.3 — Features + Performance
+
+| # | Item | Source | Status |
+|---|------|--------|--------|
+| 1 | SK_FATAL log level | External research (log.cyr parity) | Done |
+| 2 | Trace ID correlation token | External research (OTel, Rust tracing) | Done |
+| 3 | Binary format metadata event | External research (LTTng CTF) | Done |
+| 4 | Ring buffer header write optimization | Performance review | Done |
+| 5 | Double timestamp elimination on text path | Performance review | Done |
+| 6 | `_sk_memcpy` 8-byte bulk copy | Performance review | Done |
+| 7 | Toolchain pinned to 4.10.3, lib symlink updated | Infrastructure | Done |
+
+### v0.9.2 — Security Hardening Follow-up
 
 All items from the 2026-04-15 security audit. See `docs/audit/2026-04-15-audit.md`.
 
@@ -15,14 +40,6 @@ All items from the 2026-04-15 security audit. See `docs/audit/2026-04-15-audit.m
 | 5 | Document single-threaded-only constraint | CVE review | Done |
 | 6 | Document UDP transport unencrypted/unauthenticated | CVE review | Done |
 | 7 | Document 292-year timestamp overflow limit | SA-005 | Done |
-
-## v1.0.0 — Stable
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | All security hardening items resolved | Done (v0.9.1 + v0.9.2) |
-| 2 | Integration tested across 3+ consumer crates | Not started |
-| 3 | Closeout pass (full checklist per CLAUDE.md) | Not started |
 
 ---
 
@@ -38,4 +55,5 @@ Items from P(-1) research. Some previously blocked on compiler features.
 | 4 | Per-CPU ring buffers | CPU-affinity primitives | Blocked | Linux ftrace |
 | 5 | rdtsc/CNTVCT_EL0 cycle counter timestamps | Bare-metal TSC access | Blocked | ftrace, LTTng |
 | 6 | Structured typed fields (key-value per event) | Generics or compile-time layout | Blocked | OTel, Tokio tracing |
-| 7 | Slim/full `_sk_emit` level-check divergence | Slim profile expansion | Note | SA-008 |
+| 7 | Subscriber/vtable pattern for open-ended output targets | Function pointers | Feasible | Rust tracing |
+| 8 | Migrate manifest to cyrius.cyml | Cyrius CLI support | Blocked (CLI still generates .toml) | Cyrius 5.0.0 |

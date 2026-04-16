@@ -1,6 +1,6 @@
 # sakshi.cyr — tracing and error handling (stderr profile)
 # Single-file distribution. Zero heap allocation. No external dependencies.
-# Version: 0.9.2
+# Version: 0.9.3
 #
 # Minimal global footprint — no ring buffer, no UDP, no span stack.
 # For the full version (spans, ring buffer, UDP): include "lib/sakshi_full.cyr"
@@ -10,7 +10,7 @@
 # Error:  sakshi_err_new(code, cat), sakshi_err_with_ctx(code, cat, ctx),
 #         sakshi_err_code(e), sakshi_err_category(e), sakshi_err_context(e),
 #         sakshi_is_err(e), sakshi_is_ok(e)
-# Trace:  sakshi_error(msg, len), sakshi_warn, sakshi_info, sakshi_debug, sakshi_trace
+# Trace:  sakshi_fatal(msg, len), sakshi_error, sakshi_warn, sakshi_info, sakshi_debug, sakshi_trace
 #         sakshi_set_level(lvl), sakshi_get_level()
 # Output: sakshi_set_output_fd(fd),
 #         sakshi_output_file(path), sakshi_output_file_close()
@@ -48,20 +48,21 @@ enum ErrCode {
     ERR_BUSY        = 7;
 }
 
-# Log levels
+# Log levels (lower = more severe)
 enum LogLevel {
-    SK_ERROR = 0;
-    SK_WARN  = 1;
-    SK_INFO  = 2;
-    SK_DEBUG = 3;
-    SK_TRACE = 4;
+    SK_FATAL = 0;
+    SK_ERROR = 1;
+    SK_WARN  = 2;
+    SK_INFO  = 3;
+    SK_DEBUG = 4;
+    SK_TRACE = 5;
 }
 
 # ================================================================
 # Global state
 # ================================================================
 
-var _sk_log_level = 2;
+var _sk_log_level = 3;
 var _sk_stderr_fd = 2;
 var _sk_file_fd = 0 - 1;
 var _sk_file_mode = 0;
@@ -115,11 +116,12 @@ fn _sk_write_str(buf, pos, cap, s, slen) {
 
 fn _sk_level_str(level, out_str, out_len) {
     match level {
-        0 => { store64(out_str, "ERROR"); store64(out_len, 5); }
-        1 => { store64(out_str, "WARN");  store64(out_len, 4); }
-        2 => { store64(out_str, "INFO");  store64(out_len, 4); }
-        3 => { store64(out_str, "DEBUG"); store64(out_len, 5); }
-        4 => { store64(out_str, "TRACE"); store64(out_len, 5); }
+        0 => { store64(out_str, "FATAL"); store64(out_len, 5); }
+        1 => { store64(out_str, "ERROR"); store64(out_len, 5); }
+        2 => { store64(out_str, "WARN");  store64(out_len, 4); }
+        3 => { store64(out_str, "INFO");  store64(out_len, 4); }
+        4 => { store64(out_str, "DEBUG"); store64(out_len, 5); }
+        5 => { store64(out_str, "TRACE"); store64(out_len, 5); }
         _ => { store64(out_str, "?????"); store64(out_len, 5); }
     }
     return 0;
@@ -129,9 +131,8 @@ fn _sk_level_str(level, out_str, out_len) {
 # Text formatter
 # ================================================================
 
-fn _sk_fmt_line(buf, cap, level_str, level_len, msg, msg_len) {
+fn _sk_fmt_line(buf, cap, ts, level_str, level_len, msg, msg_len) {
     var pos: i64 = 0;
-    var ts = _sk_now_ns();
     if (pos < cap) { store8(buf + pos, 91); pos = pos + 1; }
     pos = _sk_write_int(buf, pos, cap, ts);
     if (pos < cap) { store8(buf + pos, 93); pos = pos + 1; }
@@ -189,7 +190,8 @@ fn _sk_emit(level, msg, msg_len) {
     var ls: i64 = 0;
     var ll: i64 = 0;
     _sk_level_str(level, &ls, &ll);
-    var len = _sk_fmt_line(&buf, 256, ls, ll, msg, msg_len);
+    var ts = _sk_now_ns();
+    var len = _sk_fmt_line(&buf, 256, ts, ls, ll, msg, msg_len);
     _sk_write(&buf, len);
     return 0;
 }
@@ -225,6 +227,8 @@ fn sakshi_set_level(level) { _sk_log_level = level; return 0; }
 # Get current minimum log level
 fn sakshi_get_level() { return _sk_log_level; }
 
+# Log a fatal message
+fn sakshi_fatal(msg, msg_len) { _sk_emit(SK_FATAL, msg, msg_len); return 0; }
 # Log an error message
 fn sakshi_error(msg, msg_len) { _sk_emit(SK_ERROR, msg, msg_len); return 0; }
 # Log a warning message

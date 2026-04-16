@@ -5,12 +5,18 @@
 
 # Log levels — lower value = higher severity
 enum LogLevel {
-    SK_ERROR = 0;
-    SK_WARN  = 1;
-    SK_INFO  = 2;
-    SK_DEBUG = 3;
-    SK_TRACE = 4;
+    SK_FATAL = 0;
+    SK_ERROR = 1;
+    SK_WARN  = 2;
+    SK_INFO  = 3;
+    SK_DEBUG = 4;
+    SK_TRACE = 5;
 }
+
+# Note: levels renumbered in v0.9.3 to add SK_FATAL.
+# v0.9.2: ERROR=0, WARN=1, INFO=2, DEBUG=3, TRACE=4
+# v0.9.3: FATAL=0, ERROR=1, WARN=2, INFO=3, DEBUG=4, TRACE=5
+# Consumers using enum names (SK_INFO etc.) are unaffected.
 
 # Span action pseudo-levels (for binary event encoding)
 enum SpanAction {
@@ -19,8 +25,8 @@ enum SpanAction {
 }
 
 # Current log level — messages above this level are suppressed.
-# Default: SK_INFO (show error, warn, info)
-var _sk_log_level = 2;
+# Default: SK_INFO (show fatal, error, warn, info)
+var _sk_log_level = 3;
 
 # Set the active log level
 fn sakshi_set_level(level) {
@@ -41,6 +47,12 @@ fn _sk_log(level, msg, msg_len) {
 }
 
 # Public API — each takes a message string and its byte length
+
+# Log a fatal message (always emitted regardless of level)
+fn sakshi_fatal(msg, msg_len) {
+    _sk_log(SK_FATAL, msg, msg_len);
+    return 0;
+}
 
 # Log an error message to the configured output
 fn sakshi_error(msg, msg_len) {

@@ -71,9 +71,17 @@ enum _SkRingConst {
     _SK_RING_MASK = 0xFFF;
 }
 
-# Enable ring buffer output
+# Enable ring buffer output.
+# Emits a metadata event (level=0xFF) describing the binary format.
 fn sakshi_output_buffer() {
     _sk_output_target = SK_OUT_BUFFER;
+    # Emit metadata event: version 1, 12-byte header layout
+    # Payload: [version:u8] [hdr_size:u8] "sakshi"
+    var meta[8];
+    store8(&meta, 1);
+    store8(&meta + 1, 12);
+    _sk_memcpy(&meta + 2, "sakshi", 6);
+    _sk_write_ring_event(0xFF, 0, &meta, 8);
     return 0;
 }
 
@@ -88,33 +96,26 @@ fn _sk_ring_put(byte) {
 # level: log level, category: error category (0 for trace events)
 # msg: message pointer, msg_len: message length
 fn _sk_write_ring_event(level, category, msg, msg_len) {
-    var ts = _sk_now_ns();
+    # Build 12-byte header on stack, then copy into ring
+    var hdr[12];
+    store64(&hdr, _sk_now_ns());
+    store8(&hdr + 8, level);
+    store8(&hdr + 9, category);
+    store16(&hdr + 10, msg_len);
 
-    # Write 12-byte binary header byte-by-byte into ring
-    # Timestamp (8 bytes, little-endian)
-    _sk_ring_put(ts & 0xFF);
-    _sk_ring_put((ts >> 8) & 0xFF);
-    _sk_ring_put((ts >> 16) & 0xFF);
-    _sk_ring_put((ts >> 24) & 0xFF);
-    _sk_ring_put((ts >> 32) & 0xFF);
-    _sk_ring_put((ts >> 40) & 0xFF);
-    _sk_ring_put((ts >> 48) & 0xFF);
-    _sk_ring_put((ts >> 56) & 0xFF);
+    # Copy header into ring (byte-by-byte for wrap safety)
+    var hi = 0;
+    while (hi < 12) {
+        store8(&_sk_ring_buf + (_sk_ring_write & _SK_RING_MASK), load8(&hdr + hi));
+        _sk_ring_write = _sk_ring_write + 1;
+        hi = hi + 1;
+    }
 
-    # Level (1 byte)
-    _sk_ring_put(level & 0xFF);
-
-    # Category (1 byte)
-    _sk_ring_put(category & 0xFF);
-
-    # Message length (2 bytes, little-endian)
-    _sk_ring_put(msg_len & 0xFF);
-    _sk_ring_put((msg_len >> 8) & 0xFF);
-
-    # Message bytes
+    # Copy message bytes into ring
     var mi = 0;
     while (mi < msg_len) {
-        _sk_ring_put(load8(msg + mi));
+        store8(&_sk_ring_buf + (_sk_ring_write & _SK_RING_MASK), load8(msg + mi));
+        _sk_ring_write = _sk_ring_write + 1;
         mi = mi + 1;
     }
 
@@ -289,14 +290,16 @@ fn _sk_write(buf, len) {
 # Level-to-string helper using match
 fn _sk_level_str(level, out_str, out_len) {
     match level {
-        0  => { store64(out_str, "ERROR"); store64(out_len, 5); }
-        1  => { store64(out_str, "WARN");  store64(out_len, 4); }
-        2  => { store64(out_str, "INFO");  store64(out_len, 4); }
-        3  => { store64(out_str, "DEBUG"); store64(out_len, 5); }
-        4  => { store64(out_str, "TRACE"); store64(out_len, 5); }
+        0  => { store64(out_str, "FATAL"); store64(out_len, 5); }
+        1  => { store64(out_str, "ERROR"); store64(out_len, 5); }
+        2  => { store64(out_str, "WARN");  store64(out_len, 4); }
+        3  => { store64(out_str, "INFO");  store64(out_len, 4); }
+        4  => { store64(out_str, "DEBUG"); store64(out_len, 5); }
+        5  => { store64(out_str, "TRACE"); store64(out_len, 5); }
         10 => { store64(out_str, "ENTER"); store64(out_len, 5); }
-        11 => { store64(out_str, "EXIT");  store64(out_len, 4); }
-        _  => { store64(out_str, "?????"); store64(out_len, 5); }
+        11  => { store64(out_str, "EXIT");  store64(out_len, 4); }
+        255 => { store64(out_str, "META");  store64(out_len, 4); }
+        _   => { store64(out_str, "?????"); store64(out_len, 5); }
     }
     return 0;
 }
@@ -315,7 +318,8 @@ fn _sk_emit(level, category, msg, msg_len) {
     var level_str: i64 = 0;
     var level_len: i64 = 0;
     _sk_level_str(level, &level_str, &level_len);
-    var len = _sk_fmt_line(&buf, 256, level_str, level_len, msg, msg_len);
+    var ts = _sk_now_ns();
+    var len = _sk_fmt_line(&buf, 256, ts, level_str, level_len, msg, msg_len);
     _sk_write(&buf, len);
     return 0;
 }
@@ -329,7 +333,8 @@ fn _sk_emit_span(action_level, action_str, action_len, name, name_len, elapsed_n
         return _sk_write_udp_event(action_level, 0, name, name_len);
     }
     var buf[256];
-    var len = _sk_fmt_span(&buf, 256, action_str, action_len, name, name_len, elapsed_ns);
+    var ts = _sk_now_ns();
+    var len = _sk_fmt_span(&buf, 256, ts, action_str, action_len, name, name_len, elapsed_ns);
     _sk_write(&buf, len);
     return 0;
 }

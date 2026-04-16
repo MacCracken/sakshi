@@ -6,10 +6,16 @@
 # Primitives
 # ================================================================
 
-# Copy n bytes from src to dst
+# Copy n bytes from src to dst (8-byte bulk + byte remainder)
 fn _sk_memcpy(dst, src, n) {
-    for (var i = 0; i < n; i = i + 1) {
+    var i: i64 = 0;
+    while (i + 8 <= n) {
+        store64(dst + i, load64(src + i));
+        i = i + 8;
+    }
+    while (i < n) {
         store8(dst + i, load8(src + i));
+        i = i + 1;
     }
     return dst;
 }
@@ -94,10 +100,9 @@ fn _sk_write_str(buf, pos, cap, s, slen) {
 # ================================================================
 
 # Format a trace line: "[timestamp] [LEVEL] msg\n"
-# Returns bytes written.
-fn _sk_fmt_line(buf, cap, level_str, level_len, msg, msg_len) {
+# Returns bytes written. Caller provides timestamp.
+fn _sk_fmt_line(buf, cap, ts, level_str, level_len, msg, msg_len) {
     var pos: i64 = 0;
-    var ts = _sk_now_ns();
 
     # [timestamp]
     if (pos < cap) { store8(buf + pos, 91); pos = pos + 1; }
@@ -121,10 +126,9 @@ fn _sk_fmt_line(buf, cap, level_str, level_len, msg, msg_len) {
 }
 
 # Format a span line: "[timestamp] [ACTION] name (elapsed ns)\n"
-# Returns bytes written.
-fn _sk_fmt_span(buf, cap, action, action_len, name, name_len, elapsed_ns) {
+# Returns bytes written. Caller provides timestamp.
+fn _sk_fmt_span(buf, cap, ts, action, action_len, name, name_len, elapsed_ns) {
     var pos: i64 = 0;
-    var ts = _sk_now_ns();
 
     # [timestamp]
     if (pos < cap) { store8(buf + pos, 91); pos = pos + 1; }

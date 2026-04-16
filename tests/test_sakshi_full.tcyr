@@ -28,6 +28,7 @@ assert(sakshi_is_err(err) == 1, "is_err packed");
 # Trace
 # ================================================================
 test_group("trace levels");
+sakshi_fatal("full fatal", 10);
 sakshi_error("full error", 10);
 sakshi_warn("full warn", 9);
 sakshi_info("full info", 9);
@@ -54,6 +55,12 @@ assert_eq(sakshi_span_depth(), 1, "after inner exit");
 sakshi_span_exit();
 assert_eq(sakshi_span_depth(), 0, "after outer exit");
 
+test_group("trace ID");
+sakshi_trace_set(0xABCD1234);
+assert_eq(sakshi_trace_id(), 0xABCD1234, "trace id set/get");
+sakshi_trace_set(0);
+assert_eq(sakshi_trace_id(), 0, "trace id cleared");
+
 test_group("span underflow");
 sakshi_span_exit();
 assert_eq(sakshi_span_depth(), 0, "no underflow");
@@ -63,9 +70,10 @@ assert_eq(sakshi_span_depth(), 0, "no underflow");
 # ================================================================
 test_group("ring buffer write");
 sakshi_output_buffer();
+# sakshi_output_buffer emits 1 metadata event, then 2 log events = 3 total
 sakshi_info("ring one", 8);
 sakshi_warn("ring two", 8);
-assert_eq(sakshi_ring_event_count(), 2, "2 events");
+assert_eq(sakshi_ring_event_count(), 3, "3 events (1 meta + 2 log)");
 assert_gt(sakshi_ring_len(), 0, "ring has bytes");
 
 test_group("ring buffer read");

@@ -9,7 +9,8 @@
 #           sakshi_is_err, sakshi_is_ok
 #   Trace:  sakshi_error, sakshi_warn, sakshi_info, sakshi_debug, sakshi_trace,
 #           sakshi_set_level, sakshi_get_level
-#   Span:   sakshi_span_enter, sakshi_span_exit, sakshi_span_depth
+#   Span:   sakshi_span_enter, sakshi_span_exit, sakshi_span_depth,
+#           sakshi_trace_set, sakshi_trace_id
 #   Output: sakshi_set_output_fd, sakshi_set_output,
 #           sakshi_output_file, sakshi_output_file_close,
 #           sakshi_output_buffer, sakshi_ring_read_raw, sakshi_ring_len,

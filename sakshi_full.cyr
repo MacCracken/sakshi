@@ -1,13 +1,13 @@
 # sakshi.cyr — tracing, error handling, and structured logging
 # Single-file distribution. Zero heap allocation. No external dependencies.
-# Version: 0.9.2
+# Version: 0.9.3
 #
 # Usage: include "lib/sakshi_full.cyr"
 #
 # Error:  sakshi_err_new(code, cat), sakshi_err_with_ctx(code, cat, ctx),
 #         sakshi_err_code(e), sakshi_err_category(e), sakshi_err_context(e),
 #         sakshi_is_err(e), sakshi_is_ok(e), sakshi_err_at_span(code, cat)
-# Trace:  sakshi_error(msg, len), sakshi_warn, sakshi_info, sakshi_debug, sakshi_trace
+# Trace:  sakshi_fatal(msg, len), sakshi_error, sakshi_warn, sakshi_info, sakshi_debug, sakshi_trace
 #         sakshi_set_level(lvl), sakshi_get_level()
 # Span:   sakshi_span_enter(name, len), sakshi_span_exit(), sakshi_span_depth()
 # Output: sakshi_set_output(target), sakshi_set_output_fd(fd),
@@ -49,11 +49,12 @@ enum ErrCode {
 }
 
 enum LogLevel {
-    SK_ERROR = 0;
-    SK_WARN  = 1;
-    SK_INFO  = 2;
-    SK_DEBUG = 3;
-    SK_TRACE = 4;
+    SK_FATAL = 0;
+    SK_ERROR = 1;
+    SK_WARN  = 2;
+    SK_INFO  = 3;
+    SK_DEBUG = 4;
+    SK_TRACE = 5;
 }
 
 enum SpanAction {
@@ -80,7 +81,7 @@ enum _SkConst {
 # Global state (8 vars + 3 arrays = minimal footprint)
 # ================================================================
 
-var _sk_log_level = 2;
+var _sk_log_level = 3;
 var _sk_output_target = 0;
 var _sk_stderr_fd = 2;
 var _sk_file_fd: i64 = 0 - 1;
@@ -88,6 +89,7 @@ var _sk_udp_fd: i64 = 0 - 1;
 var _sk_ring_write: i64 = 0;
 var _sk_ring_count: i64 = 0;
 var _sk_span_depth: i64 = 0;
+var _sk_trace_id: i64 = 0;
 var _sk_ring_buf[4096];
 var _sk_udp_addr[16];
 var _sk_span_stack[384];
@@ -97,7 +99,9 @@ var _sk_span_stack[384];
 # ================================================================
 
 fn _sk_memcpy(dst, src, n) {
-    for (var i = 0; i < n; i = i + 1) { store8(dst + i, load8(src + i)); }
+    var i: i64 = 0;
+    while (i + 8 <= n) { store64(dst + i, load64(src + i)); i = i + 8; }
+    while (i < n) { store8(dst + i, load8(src + i)); i = i + 1; }
     return dst;
 }
 
@@ -147,14 +151,16 @@ fn _sk_write_str(buf, pos, cap, s, slen) {
 
 fn _sk_level_str(level, out_str, out_len) {
     match level {
-        0  => { store64(out_str, "ERROR"); store64(out_len, 5); }
-        1  => { store64(out_str, "WARN");  store64(out_len, 4); }
-        2  => { store64(out_str, "INFO");  store64(out_len, 4); }
-        3  => { store64(out_str, "DEBUG"); store64(out_len, 5); }
-        4  => { store64(out_str, "TRACE"); store64(out_len, 5); }
+        0  => { store64(out_str, "FATAL"); store64(out_len, 5); }
+        1  => { store64(out_str, "ERROR"); store64(out_len, 5); }
+        2  => { store64(out_str, "WARN");  store64(out_len, 4); }
+        3  => { store64(out_str, "INFO");  store64(out_len, 4); }
+        4  => { store64(out_str, "DEBUG"); store64(out_len, 5); }
+        5  => { store64(out_str, "TRACE"); store64(out_len, 5); }
         10 => { store64(out_str, "ENTER"); store64(out_len, 5); }
-        11 => { store64(out_str, "EXIT");  store64(out_len, 4); }
-        _  => { store64(out_str, "?????"); store64(out_len, 5); }
+        11  => { store64(out_str, "EXIT");  store64(out_len, 4); }
+        255 => { store64(out_str, "META");  store64(out_len, 4); }
+        _   => { store64(out_str, "?????"); store64(out_len, 5); }
     }
     return 0;
 }
@@ -163,9 +169,8 @@ fn _sk_level_str(level, out_str, out_len) {
 # Text formatters
 # ================================================================
 
-fn _sk_fmt_line(buf, cap, level_str, level_len, msg, msg_len) {
+fn _sk_fmt_line(buf, cap, ts, level_str, level_len, msg, msg_len) {
     var pos: i64 = 0;
-    var ts = _sk_now_ns();
     if (pos < cap) { store8(buf + pos, 91); pos = pos + 1; }
     pos = _sk_write_int(buf, pos, cap, ts);
     if (pos < cap) { store8(buf + pos, 93); pos = pos + 1; }
@@ -179,9 +184,8 @@ fn _sk_fmt_line(buf, cap, level_str, level_len, msg, msg_len) {
     return pos;
 }
 
-fn _sk_fmt_span(buf, cap, action, action_len, name, name_len, elapsed_ns) {
+fn _sk_fmt_span(buf, cap, ts, action, action_len, name, name_len, elapsed_ns) {
     var pos: i64 = 0;
-    var ts = _sk_now_ns();
     if (pos < cap) { store8(buf + pos, 91); pos = pos + 1; }
     pos = _sk_write_int(buf, pos, cap, ts);
     if (pos < cap) { store8(buf + pos, 93); pos = pos + 1; }
@@ -233,21 +237,29 @@ fn _sk_ring_put(byte) {
 }
 
 fn _sk_write_ring_event(level, category, msg, msg_len) {
-    var ts = _sk_now_ns();
-    _sk_ring_put(ts & 0xFF);
-    _sk_ring_put((ts >> 8) & 0xFF);
-    _sk_ring_put((ts >> 16) & 0xFF);
-    _sk_ring_put((ts >> 24) & 0xFF);
-    _sk_ring_put((ts >> 32) & 0xFF);
-    _sk_ring_put((ts >> 40) & 0xFF);
-    _sk_ring_put((ts >> 48) & 0xFF);
-    _sk_ring_put((ts >> 56) & 0xFF);
-    _sk_ring_put(level & 0xFF);
-    _sk_ring_put(category & 0xFF);
-    _sk_ring_put(msg_len & 0xFF);
-    _sk_ring_put((msg_len >> 8) & 0xFF);
+    # Build 12-byte header on stack, then copy into ring
+    var hdr[12];
+    store64(&hdr, _sk_now_ns());
+    store8(&hdr + 8, level);
+    store8(&hdr + 9, category);
+    store16(&hdr + 10, msg_len);
+
+    # Copy header into ring (byte-by-byte for wrap safety)
+    var hi = 0;
+    while (hi < 12) {
+        store8(&_sk_ring_buf + (_sk_ring_write & _SK_RING_MASK), load8(&hdr + hi));
+        _sk_ring_write = _sk_ring_write + 1;
+        hi = hi + 1;
+    }
+
+    # Copy message bytes into ring
     var mi = 0;
-    while (mi < msg_len) { _sk_ring_put(load8(msg + mi)); mi = mi + 1; }
+    while (mi < msg_len) {
+        store8(&_sk_ring_buf + (_sk_ring_write & _SK_RING_MASK), load8(msg + mi));
+        _sk_ring_write = _sk_ring_write + 1;
+        mi = mi + 1;
+    }
+
     _sk_ring_count = _sk_ring_count + 1;
     return 0;
 }
@@ -287,7 +299,8 @@ fn _sk_emit(level, category, msg, msg_len) {
     var ls: i64 = 0;
     var ll: i64 = 0;
     _sk_level_str(level, &ls, &ll);
-    var len = _sk_fmt_line(&buf, 256, ls, ll, msg, msg_len);
+    var ts = _sk_now_ns();
+    var len = _sk_fmt_line(&buf, 256, ts, ls, ll, msg, msg_len);
     _sk_write(&buf, len);
     return 0;
 }
@@ -300,7 +313,8 @@ fn _sk_emit_span(action_level, action_str, action_len, name, name_len, elapsed_n
         return _sk_write_udp_event(action_level, 0, name, name_len);
     }
     var buf[256];
-    var len = _sk_fmt_span(&buf, 256, action_str, action_len, name, name_len, elapsed_ns);
+    var ts = _sk_now_ns();
+    var len = _sk_fmt_span(&buf, 256, ts, action_str, action_len, name, name_len, elapsed_ns);
     _sk_write(&buf, len);
     return 0;
 }
@@ -345,6 +359,8 @@ fn _sk_log(level, msg, msg_len) {
     return 0;
 }
 
+# Log a fatal message
+fn sakshi_fatal(msg, msg_len) { _sk_log(SK_FATAL, msg, msg_len); return 0; }
 # Log an error message
 fn sakshi_error(msg, msg_len) { _sk_log(SK_ERROR, msg, msg_len); return 0; }
 # Log a warning message
@@ -388,6 +404,12 @@ fn sakshi_span_exit() {
 # Get current span nesting depth
 fn sakshi_span_depth() { return _sk_span_depth; }
 
+# Set the active trace ID for correlating spans and events
+fn sakshi_trace_set(id) { _sk_trace_id = id; return 0; }
+
+# Get the active trace ID
+fn sakshi_trace_id() { return _sk_trace_id; }
+
 # Create error with current span depth as context
 fn sakshi_err_at_span(code, category) {
     return sakshi_err_with_ctx(code, category, sakshi_span_depth());
@@ -425,8 +447,17 @@ fn sakshi_output_file_close() {
     return 0;
 }
 
-# Switch to ring buffer output mode
-fn sakshi_output_buffer() { _sk_output_target = SK_OUT_BUFFER; return 0; }
+# Switch to ring buffer output mode.
+# Emits a metadata event (level=0xFF) describing the binary format.
+fn sakshi_output_buffer() {
+    _sk_output_target = SK_OUT_BUFFER;
+    var meta[8];
+    store8(&meta, 1);
+    store8(&meta + 1, 12);
+    _sk_memcpy(&meta + 2, "sakshi", 6);
+    _sk_write_ring_event(0xFF, 0, &meta, 8);
+    return 0;
+}
 
 # Read raw bytes from ring buffer.
 # Caller must ensure dst points to a buffer of at least max_len bytes.

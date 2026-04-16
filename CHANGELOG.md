@@ -5,6 +5,26 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2026-04-15
+
+### Breaking
+
+- **Log level enum renumbered** — `SK_FATAL=0` added, all existing levels shifted +1. `SK_ERROR` is now 1 (was 0), `SK_WARN` is 2 (was 1), `SK_INFO` is 3 (was 2), `SK_DEBUG` is 4 (was 3), `SK_TRACE` is 5 (was 4). Default log level updated to 3 (INFO). Consumers using enum names (`SK_INFO`, etc.) need only recompile — no source changes required. Consumers using hardcoded numeric values must update them.
+- **Ring buffer metadata event** — `sakshi_output_buffer()` now emits a metadata event (level=0xFF) as the first event when ring buffer output is activated. Consumers reading raw ring data should skip or handle events with level 255. `sakshi_ring_event_count()` includes this event in the count.
+
+### Added
+
+- **`SK_FATAL` log level** — new most-severe level (value 0). `sakshi_fatal(msg, msg_len)` API. Always emitted at any log level setting. `_sk_level_str` outputs "FATAL". (`src/trace.cyr`, `src/output.cyr`, `sakshi.cyr`, `sakshi_full.cyr`)
+- **Trace ID correlation** — `sakshi_trace_set(id)` / `sakshi_trace_id()` API for stamping a u64 correlation token across spans and events. Zero-alloc, single global. (`src/span.cyr`, `sakshi_full.cyr`)
+- **Binary format metadata event** — ring buffer init emits a self-describing header: format version (1), header size (12), magic ("sakshi"). Level 0xFF marker. Enables offline tooling to validate format without hardcoding layout. (`src/output.cyr`, `sakshi_full.cyr`)
+- **`.cyrius-toolchain`** — toolchain pinned to 4.10.3 (latest stdlib). Lib symlink updated from Cyrius 2.2.0.
+
+### Changed
+
+- **Performance: eliminated double timestamp on text path** — `_sk_fmt_line` and `_sk_fmt_span` now accept a pre-captured timestamp parameter instead of calling `_sk_now_ns()` internally. Saves one `clock_gettime` syscall per text event. (`src/format.cyr`, `src/output.cyr`, `sakshi.cyr`, `sakshi_full.cyr`)
+- **Performance: ring buffer header write** — replaced 12 individual `_sk_ring_put` function calls with stack-build + byte-copy loop. Eliminates function call overhead for header construction. (`src/output.cyr`, `sakshi_full.cyr`)
+- **Performance: `_sk_memcpy` 8-byte bulk copy** — uses `store64`/`load64` for aligned 8-byte chunks, byte loop for remainder. ~8x faster for larger payloads. (`src/format.cyr`, `sakshi_full.cyr`)
+
 ## [0.9.2] - 2026-04-15
 
 ### Security

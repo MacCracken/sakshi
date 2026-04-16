@@ -16,6 +16,7 @@
 # Total: 16 * 24 = 384 bytes
 var _sk_span_stack[384];
 var _sk_span_depth: i64 = 0;
+var _sk_trace_id: i64 = 0;
 enum _SkSpanConst {
     _SK_MAX_SPANS = 16;
 }
@@ -50,4 +51,16 @@ fn sakshi_span_exit() {
 # Get current span depth
 fn sakshi_span_depth() {
     return _sk_span_depth;
+}
+
+# Set the active trace ID for correlating spans and events.
+# Typically set once at the root span of a request/operation.
+fn sakshi_trace_set(id) {
+    _sk_trace_id = id;
+    return 0;
+}
+
+# Get the active trace ID.
+fn sakshi_trace_id() {
+    return _sk_trace_id;
 }

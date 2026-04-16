@@ -29,6 +29,7 @@ assert(sakshi_is_ok(err) == 0, "is_ok on packed");
 # Trace output
 # ================================================================
 test_group("trace levels");
+sakshi_fatal("test fatal msg", 14);
 sakshi_error("test error msg", 14);
 sakshi_warn("test warn msg", 13);
 sakshi_info("test info msg", 13);
