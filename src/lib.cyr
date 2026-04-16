@@ -7,7 +7,7 @@
 #   Error:  sakshi_err_new, sakshi_err_with_ctx, sakshi_err_at_span,
 #           sakshi_err_code, sakshi_err_category, sakshi_err_context,
 #           sakshi_is_err, sakshi_is_ok
-#   Trace:  sakshi_error, sakshi_warn, sakshi_info, sakshi_debug, sakshi_trace,
+#   Trace:  sakshi_fatal, sakshi_error, sakshi_warn, sakshi_info, sakshi_debug, sakshi_trace,
 #           sakshi_set_level, sakshi_get_level
 #   Span:   sakshi_span_enter, sakshi_span_exit, sakshi_span_depth,
 #           sakshi_trace_set, sakshi_trace_id
@@ -16,7 +16,9 @@
 #           sakshi_output_buffer, sakshi_ring_read_raw, sakshi_ring_len,
 #           sakshi_ring_clear, sakshi_ring_event_count, sakshi_ring_decode_event,
 #           sakshi_output_udp, sakshi_output_udp_close, sakshi_ipv4
-#   Config: compile-time via #ref "sakshi.toml"
+#
+# Defaults: log level = INFO (3), output target = stderr. Override at runtime
+# via sakshi_set_level / sakshi_set_output before first emit.
 #
 # Constraints:
 #   - Single-threaded only. No synchronization primitives — concurrent
@@ -33,9 +35,3 @@ include "src/output.cyr"
 include "src/error.cyr"
 include "src/trace.cyr"
 include "src/span.cyr"
-
-# Config last — applies compile-time values to runtime state
-include "src/config.cyr"
-
-# Apply compile-time configuration
-var _sk_init = _sk_apply_config();

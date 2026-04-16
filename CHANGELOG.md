@@ -5,6 +5,39 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-04-16
+
+Flat patra-style refactor. **Breaking** — the hand-maintained `sakshi.cyr` (slim) and `sakshi_full.cyr` (full) bundles at the repo root are gone. Consumers include `src/lib.cyr` directly, or pull the generated `dist/sakshi.cyr` single-file bundle. Scaffold also modernized to match the AGNOS first-party template (Ark reference).
+
+### Breaking
+
+- **Removed root-level `sakshi.cyr` and `sakshi_full.cyr`**. Replace any `include "sakshi.cyr"` or `include "sakshi_full.cyr"` with either:
+  - `include "src/lib.cyr"` — modular source, recommended for consumers that live alongside sakshi (Cyrius stdlib, sibling crates).
+  - `include "dist/sakshi.cyr"` — single-file bundle, recommended for external consumers that pull sakshi via `[deps.sakshi] modules = [...]`.
+  The public API is unchanged (same function names, same signatures); only the include path moves. The slim profile is retired — DCE (`CYRIUS_DCE=1`) prunes unused surface to roughly the same size.
+- **Test layout reorganized** to `tests/tcyr/` and `tests/bcyr/` (patra convention). `tests/test_sakshi.tcyr` (slim-only coverage, fully subsumed by full) is removed; `tests/test_sakshi_full.tcyr` moves to `tests/tcyr/sakshi.tcyr`. `benches/sakshi.bcyr` moves to `tests/bcyr/sakshi.bcyr`; the top-level `benches/` directory is removed.
+
+### Changed
+
+- **Manifest migrated `cyrius.toml` → `cyrius.cyml`** — adds `cyrius = "5.1.12"` pin, `[build]` (entry=`programs/smoke.cyr`, defines=`SAKSHI_SMOKE`), and `[deps].stdlib` list.
+- **Toolchain bumped to Cyrius 5.1.12** — `.cyrius-toolchain` updated from 5.1.1. Tests and benchmarks verified on the new toolchain (err_new 6ns, err_unpack 11ns — unchanged from 1.0.0 baseline).
+- **CI workflow rewritten** — reads `.cyrius-toolchain` at runtime (was hardcoded `CYRIUS_VERSION: 3.2.6` env — stale). Adds `cyrius deps`, per-file `cyrius lint`, `CYRIUS_DCE=1 cyrius build` + smoke run, `cyrius test tests/tcyr/sakshi.tcyr`, and `cyrius bench tests/bcyr/sakshi.bcyr`. Security scan and docs job retained.
+- **Release workflow** — runs the same DCE build + smoke as CI before packaging, and verifies `cyrius.cyml` version matches the tag (in addition to `VERSION`).
+
+### Added
+
+- **`programs/smoke.cyr`** — minimal end-to-end smoke program. Includes `src/lib.cyr`, exercises `set_level` / `info` / `span_enter` / `err_new` / `span_exit`. Built in CI with `CYRIUS_DCE=1` to validate the library compiles cleanly, DCE prunes unused surface, and the public API is consumable from a downstream project.
+- **`scripts/bundle.sh`** — generates `dist/sakshi.cyr` from `src/*.cyr`, matching the patra bundling pattern. CI regenerates and diffs against the committed `dist/sakshi.cyr` to catch drift between `src/` and the bundle.
+- **`fuzz/` directory** — placeholder for fuzz harnesses (patra-style layout). Empty in 2.0.0; populated in a follow-up.
+
+### Removed
+
+- **`src/config.cyr` + `sakshi.toml`** — the `#ref "sakshi.toml"` compile-time configuration mechanism never actually resolved under `cyrius check` / `build` / `test` on the 5.x toolchain. Previous tests only passed because they included the root bundles, which bypassed `config.cyr` entirely and used hardcoded defaults. Moving tests onto `src/lib.cyr` surfaced the dead path. Defaults (log level INFO = 3, output target stderr = 0) are baked into `src/trace.cyr` and `src/output.cyr` at their declaration sites — the runtime behavior is identical to the previous default-only configuration. Roadmap item #1 now tracks a `#define`-based replacement via `cyrius.cyml` `defines`.
+
+### Fixed
+
+- **`docs/architecture/overview.md`** — trace module description now lists `fatal` alongside `error/warn/info/debug/trace` (added in v0.9.3).
+
 ## [1.0.0] - 2026-04-16
 
 **Stable release.** Zero-alloc tracing, error handling, and structured logging for the Cyrius ecosystem. Ships as part of Cyrius stdlib since v5.1.1.

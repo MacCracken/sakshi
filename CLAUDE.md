@@ -8,7 +8,7 @@
 - **License**: GPL-3.0-only
 - **Language**: Cyrius (sovereign systems language, compiled by cc3)
 - **Version**: SemVer, version file at `VERSION`
-- **Status**: v1.0.0 — stable release
+- **Status**: v2.0.0 — flat patra-style layout, single distribution bundle
 - **Genesis repo**: [agnosticos](https://github.com/MacCracken/agnosticos)
 - **Standards**: [First-Party Standards](https://github.com/MacCracken/agnosticos/blob/main/docs/development/applications/first-party-standards.md)
 - **Shared crates**: [shared-crates.md](https://github.com/MacCracken/agnosticos/blob/main/docs/development/applications/shared-crates.md)
@@ -32,16 +32,15 @@
 src/
   lib.cyr         — public API (includes all modules, auto-init)
   error.cyr       — packed i64 error codes (code + category + context)
-  trace.cyr       — log levels (error/warn/info/debug/trace), structured output
+  trace.cyr       — log levels (fatal/error/warn/info/debug/trace), structured output
   span.cyr        — enter/exit function tracking with nanosecond timing
   format.cyr      — fixed-buffer message formatting, binary event format
   output.cyr      — output targets (stderr, file, ring buffer, UDP)
-  config.cyr      — #ref TOML config at compile time
+dist/
+  sakshi.cyr      — generated single-file bundle (scripts/bundle.sh)
 ```
 
-Distribution profiles:
-- `sakshi.cyr` — slim single-file (stderr + file output only, no spans/ring/UDP)
-- `sakshi_full.cyr` — full single-file (all features)
+Single distribution. Internal consumers (Cyrius stdlib, sibling AGNOS crates) include `src/lib.cyr` directly. External consumers pull the generated `dist/sakshi.cyr`. The pre-2.0 slim/full split is gone — `CYRIUS_DCE=1` prunes unused surface to roughly the same size as the old slim bundle.
 
 ## Development Process
 

@@ -6,7 +6,7 @@ include "lib/alloc.cyr"
 include "lib/fnptr.cyr"
 include "lib/bench.cyr"
 
-include "sakshi.cyr"
+include "src/lib.cyr"
 
 alloc_init();
 

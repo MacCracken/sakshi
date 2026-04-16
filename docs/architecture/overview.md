@@ -7,11 +7,10 @@
 ```
 sakshi
 ├── error      — packed i64 error codes (code + category + optional context)
-├── trace      — log levels (error/warn/info/debug/trace), structured output
+├── trace      — log levels (fatal/error/warn/info/debug/trace), structured output
 ├── span       — enter/exit function tracking with timing
 ├── format     — fixed-buffer message formatting (timestamp, level, module, message)
-├── output     — output targets (stderr, file, ring buffer, UDP)
-└── config     — compile-time #ref TOML configuration
+└── output     — output targets (stderr, file, ring buffer, UDP)
 ```
 
 ## Data Flow
@@ -46,9 +45,14 @@ No heap. No serde. No format strings. Direct byte writes to the output buffer.
 
 Every AGNOS Cyrius project. This is the first `include` in every crate.
 
+- **Internal** (Cyrius stdlib, sibling AGNOS crates): `include "sakshi/src/lib.cyr"` — resolves via `[deps.sakshi] path = "../sakshi"`.
+- **External**: `include "lib/sakshi.cyr"` — resolves to the generated `dist/sakshi.cyr` bundle via `[deps.sakshi] modules = ["dist/sakshi.cyr"]`.
+
+The pre-2.0 slim/full split is retired. `CYRIUS_DCE=1` prunes unused API surface on a per-consumer basis — callers that never touch UDP or the ring buffer pay nothing for those paths.
+
 ## Design Constraints
 
 - Zero heap allocation on error/trace hot path
 - Compiled contribution: 2-3KB target
 - No external dependencies (this IS the foundation)
-- `#ref "sakshi.toml"` for compile-time config (log levels, output targets)
+- Defaults (log level INFO, output stderr) are baked into `src/trace.cyr` and `src/output.cyr`. Override at runtime via `sakshi_set_level` / `sakshi_set_output` before the first emit.

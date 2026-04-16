@@ -1,0 +1,21 @@
+# smoke.cyr — minimal end-to-end validation of the sakshi distribution.
+# Built in CI with CYRIUS_DCE=1 to prove the library compiles, DCE prunes
+# unused surface, and the public API is consumable from a downstream project.
+
+include "src/lib.cyr"
+
+fn main() {
+    sakshi_set_level(SK_INFO);
+    sakshi_info("sakshi smoke ok", 15);
+
+    sakshi_span_enter("smoke", 5);
+    var err = sakshi_err_new(ERR_OK, ERR_CAT_NONE);
+    sakshi_span_exit();
+
+    return sakshi_err_code(err);
+}
+
+#ifdef SAKSHI_SMOKE
+var exit_code = main();
+syscall(SYS_EXIT, exit_code);
+#endif

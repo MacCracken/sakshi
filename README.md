@@ -9,7 +9,7 @@ In Advaita Vedanta, the *sakshi* is pure observer-consciousness — always prese
 - **Error codes** — Packed i64 error representation (code + category in a single integer). Zero-alloc error creation and propagation.
 - **Tracing** — Structured log output with levels (error, warn, info, debug, trace). Fixed-buffer formatting. No heap allocation on the hot path.
 - **Spans** — Function enter/exit tracking with timing. Nestable context for tracing call chains.
-- **Output targets** — Serial, file, buffer, network. Configurable at compile time via `#ref` from TOML.
+- **Output targets** — stderr, file, ring buffer, UDP. Runtime-selectable via `sakshi_set_output`.
 
 ## Design Principles
 
@@ -23,20 +23,35 @@ In Advaita Vedanta, the *sakshi* is pure observer-consciousness — always prese
 ```
 sakshi/
   src/
-    lib.cyr         — public API, includes all modules
+    lib.cyr         — public API, includes all modules (internal consumers start here)
     error.cyr       — packed error codes, categories, context
     trace.cyr       — log levels, structured output, fixed buffers
     span.cyr        — enter/exit tracking, timing
     format.cyr      — timestamp, level, module, message formatting
-    output.cyr      — serial, file, buffer, network targets
-    config.cyr      — #ref TOML config loading at compile time
+    output.cyr      — stderr, file, ring buffer, UDP targets
+  dist/
+    sakshi.cyr      — generated single-file bundle (external consumers)
+  scripts/
+    bundle.sh       — regenerates dist/sakshi.cyr from src/
 ```
 
 ## Usage
 
+Sibling checkout (Cyrius stdlib, AGNOS crates):
+
 ```cyrius
 include "sakshi/src/lib.cyr"
+```
 
+External consumers pulling via `[deps.sakshi]`:
+
+```cyrius
+include "lib/sakshi.cyr"   # resolved from the bundle at dist/sakshi.cyr
+```
+
+Then the API is the same:
+
+```cyrius
 # Errors — packed i64
 var err = sakshi_err_new(ERR_NOT_FOUND, ERR_CAT_IO);
 var code = sakshi_err_code(err);

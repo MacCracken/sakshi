@@ -1,6 +1,6 @@
 # output.cyr — output targets for sakshi
 # Supports: stderr (default), file, ring buffer (binary), UDP (binary).
-# Target selection via sk_cfg_output_target from config.cyr.
+# Target selection via sakshi_set_output at runtime.
 # Depends: format.cyr (for _sk_memcpy, _sk_now_ns, _sk_bin_write_hdr)
 
 # Output target constants

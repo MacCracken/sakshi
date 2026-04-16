@@ -1,0 +1,16 @@
+[package]
+name = "sakshi"
+version = "2.0.0"
+description = "Sakshi — the silent witness. Tracing, error handling, and structured logging for Cyrius."
+license = "GPL-3.0-only"
+repository = "https://github.com/MacCracken/sakshi"
+language = "cyrius"
+cyrius = "5.1.12"
+
+[build]
+entry = "programs/smoke.cyr"
+output = "build/sakshi-smoke"
+defines = ["SAKSHI_SMOKE"]
+
+[deps]
+stdlib = ["syscalls", "string", "fmt", "assert", "alloc", "fnptr", "bench"]

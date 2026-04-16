@@ -2,21 +2,16 @@ name: Release
 
 on:
   push:
-    tags: ['*']
+    tags: ['[0-9]*']
 
 permissions:
   contents: write
 
-env:
-  CYRIUS_VERSION: "3.2.6"
-
 jobs:
-  # ── CI Gate (must pass before release) ──
   ci:
     name: CI Gate
     uses: ./.github/workflows/ci.yml
 
-  # ── Build release artifacts ──
   build:
     name: Build Release
     needs: [ci]
@@ -32,10 +27,17 @@ jobs:
             echo "ERROR: VERSION ($FILE_VERSION) != tag ($TAG_VERSION)"
             exit 1
           fi
+          MANIFEST_VERSION=$(grep -oP '(?<=^version = ")[^"]+' cyrius.cyml)
+          if [ "$MANIFEST_VERSION" != "$TAG_VERSION" ]; then
+            echo "ERROR: cyrius.cyml version ($MANIFEST_VERSION) != tag ($TAG_VERSION)"
+            exit 1
+          fi
           echo "Version verified: $TAG_VERSION"
 
       - name: Install Cyrius toolchain
         run: |
+          CYRIUS_VERSION="${CYRIUS_VERSION:-$(cat .cyrius-toolchain | tr -d '[:space:]')}"
+          echo "Installing Cyrius $CYRIUS_VERSION"
           curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
           tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
           CYRIUS_DIR="cyrius-$CYRIUS_VERSION-x86_64-linux"
@@ -44,9 +46,14 @@ jobs:
           cp -r "$CYRIUS_DIR/lib/"* "$HOME/.cyrius/lib/" 2>/dev/null || true
           chmod +x "$HOME/.cyrius/bin/"* 2>/dev/null || true
           echo "$HOME/.cyrius/bin" >> $GITHUB_PATH
+          echo "CYRIUS_HOME=$HOME/.cyrius" >> $GITHUB_ENV
 
-      - name: Build and run tests
-        run: sh scripts/test.sh
+      - name: Build (DCE) + smoke
+        run: |
+          cyrius deps
+          mkdir -p build
+          CYRIUS_DCE=1 cyrius build -D SAKSHI_SMOKE programs/smoke.cyr build/sakshi-smoke
+          ./build/sakshi-smoke
 
       - name: Extract changelog
         run: |
@@ -75,9 +82,9 @@ jobs:
           path: |
             sakshi-*-src.tar.gz
             SHA256SUMS
+            /tmp/release-body.md
           retention-days: 5
 
-  # ── Create GitHub Release ──
   release:
     name: Create GitHub Release
     needs: [build]

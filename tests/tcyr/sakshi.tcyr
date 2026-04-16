@@ -1,12 +1,12 @@
-# Test: sakshi full profile — spans, ring buffer, UDP, binary decode
+# Test: sakshi — spans, ring buffer, UDP, binary decode, error codes, trace
 include "lib/string.cyr"
 include "lib/fmt.cyr"
 include "lib/assert.cyr"
 
-include "sakshi_full.cyr"
+include "src/lib.cyr"
 
 # ================================================================
-# Error codes (same as slim, verify full profile parity)
+# Error codes
 # ================================================================
 test_group("error pack/unpack");
 var err = sakshi_err_new(ERR_NOT_FOUND, ERR_CAT_IO);

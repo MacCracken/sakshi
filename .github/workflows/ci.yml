@@ -11,34 +11,60 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  CYRIUS_VERSION: "3.2.6"
-
 jobs:
-  # ── Build + Test ──
-  test:
-    name: Build & Test
+  build:
+    name: Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Cyrius toolchain
         run: |
+          CYRIUS_VERSION="${CYRIUS_VERSION:-$(cat .cyrius-toolchain | tr -d '[:space:]')}"
+          echo "Installing Cyrius $CYRIUS_VERSION"
           curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
           tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
           CYRIUS_DIR="cyrius-$CYRIUS_VERSION-x86_64-linux"
           mkdir -p "$HOME/.cyrius/bin" "$HOME/.cyrius/lib"
           cp "$CYRIUS_DIR/bin/"* "$HOME/.cyrius/bin/" 2>/dev/null || true
-          cp "$CYRIUS_DIR/scripts/cyrius" "$HOME/.cyrius/bin/cyrius" 2>/dev/null || true
           cp -r "$CYRIUS_DIR/lib/"* "$HOME/.cyrius/lib/" 2>/dev/null || true
           chmod +x "$HOME/.cyrius/bin/"* 2>/dev/null || true
           echo "$HOME/.cyrius/bin" >> $GITHUB_PATH
-          echo "Cyrius $CYRIUS_VERSION installed"
+          echo "CYRIUS_HOME=$HOME/.cyrius" >> $GITHUB_ENV
 
-      - name: Run tests
-        run: cyrius test
+      - name: Resolve dependencies
+        run: cyrius deps
 
-  # ── Security ──
+      - name: Lint
+        run: |
+          for f in src/format.cyr src/output.cyr src/error.cyr src/trace.cyr src/span.cyr src/config.cyr src/lib.cyr programs/smoke.cyr dist/sakshi.cyr; do
+            cyrius lint "$f"
+          done
+
+      - name: Verify dist/sakshi.cyr is in sync with src/
+        run: |
+          sh scripts/bundle.sh
+          if ! git diff --quiet dist/sakshi.cyr; then
+            echo "ERROR: dist/sakshi.cyr is stale. Run 'sh scripts/bundle.sh' and commit the result."
+            git --no-pager diff dist/sakshi.cyr | head -40
+            exit 1
+          fi
+          echo "dist/sakshi.cyr matches src/ ✓"
+
+      - name: Build (DCE)
+        run: |
+          mkdir -p build
+          CYRIUS_DCE=1 cyrius build -D SAKSHI_SMOKE programs/smoke.cyr build/sakshi-smoke
+
+      - name: Smoke
+        run: ./build/sakshi-smoke
+
+      - name: Test
+        run: cyrius test tests/tcyr/sakshi.tcyr
+
+      - name: Bench
+        run: cyrius bench tests/bcyr/sakshi.bcyr
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -55,19 +81,18 @@ jobs:
           fi
           echo "security scan complete (warnings: $WARN)"
 
-  # ── Documentation ──
   docs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check required docs exist
+      - name: Check required files
         run: |
           MISSING=0
-          for doc in README.md CHANGELOG.md VERSION CONTRIBUTING.md SECURITY.md LICENSE; do
-            if [ -f "$doc" ]; then echo "  OK: $doc"
-            else echo "  MISSING: $doc"; MISSING=1; fi
+          for f in README.md CHANGELOG.md VERSION CONTRIBUTING.md SECURITY.md LICENSE cyrius.cyml .cyrius-toolchain; do
+            if [ -f "$f" ]; then echo "  OK: $f"
+            else echo "  MISSING: $f"; MISSING=1; fi
           done
           exit $MISSING
 
@@ -75,35 +100,6 @@ jobs:
         run: |
           VERSION=$(cat VERSION | tr -d '[:space:]')
           echo "VERSION file: $VERSION"
+          grep -q "^version = \"$VERSION\"" cyrius.cyml || { echo "FAIL: cyrius.cyml version != VERSION ($VERSION)"; exit 1; }
           grep -q "$VERSION" CHANGELOG.md || { echo "FAIL: version not in changelog"; exit 1; }
-          echo "Version consistent"
-
-      - name: Install Cyrius toolchain (for cyrdoc)
-        run: |
-          curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
-          tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
-          CYRIUS_DIR="cyrius-$CYRIUS_VERSION-x86_64-linux"
-          mkdir -p "$HOME/.cyrius/bin"
-          if [ -f "$CYRIUS_DIR/bin/cyrdoc" ]; then
-            cp "$CYRIUS_DIR/bin/cyrdoc" "$HOME/.cyrius/bin/cyrdoc"
-            chmod +x "$HOME/.cyrius/bin/cyrdoc"
-            echo "$HOME/.cyrius/bin" >> $GITHUB_PATH
-          else
-            echo "cyrdoc not in release — skipping doc coverage"
-          fi
-
-      - name: Doc coverage
-        run: |
-          if command -v cyrdoc >/dev/null 2>&1; then
-            total=0
-            for f in src/*.cyr sakshi.cyr sakshi_full.cyr; do
-              [ -f "$f" ] || continue
-              u=$(cyrdoc --check "$f" 2>&1 | tail -1 | grep -oP '(\d+) undocumented' | grep -oP '^\d+' || echo 0)
-              if [ "$u" -gt 0 ]; then echo "  $f: $u undocumented"; fi
-              total=$((total + u))
-            done
-            echo "$total undocumented"
-            test $total -eq 0
-          else
-            echo "skip: cyrdoc not available"
-          fi
+          echo "Version consistent across VERSION, cyrius.cyml, CHANGELOG.md"
