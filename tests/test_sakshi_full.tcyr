@@ -98,6 +98,46 @@ sakshi_info("file test", 9);
 sakshi_output_file_close();
 
 # ================================================================
+# Level filtering
+# ================================================================
+test_group("level filtering");
+sakshi_set_level(SK_INFO);
+sakshi_debug("should not appear", 17);
+sakshi_trace("should not appear", 17);
+sakshi_set_level(SK_TRACE);
+assert_eq(sakshi_get_level(), SK_TRACE, "trace level set");
+sakshi_trace("trace visible", 13);
+sakshi_set_level(SK_INFO);
+
+# ================================================================
+# Span overflow
+# ================================================================
+test_group("span overflow (16-deep)");
+for (var si = 0; si < 16; si = si + 1) {
+    sakshi_span_enter("fill", 4);
+}
+assert_eq(sakshi_span_depth(), 16, "depth at max");
+# 17th enter should be silently ignored
+sakshi_span_enter("overflow", 8);
+assert_eq(sakshi_span_depth(), 16, "depth still 16");
+# unwind all
+for (var si = 0; si < 16; si = si + 1) {
+    sakshi_span_exit();
+}
+assert_eq(sakshi_span_depth(), 0, "depth back to 0");
+
+# ================================================================
+# Output fd redirect
+# ================================================================
+test_group("output fd redirect");
+var devnull = syscall(2, "/dev/null", 1, 0);
+assert_gt(devnull, 0, "open /dev/null");
+sakshi_set_output_fd(devnull);
+sakshi_info("to devnull", 10);
+sakshi_set_output_fd(2);
+syscall(3, devnull);
+
+# ================================================================
 # Edge cases
 # ================================================================
 test_group("error edge: max values");

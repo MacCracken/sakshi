@@ -8,7 +8,7 @@
 - **License**: GPL-3.0-only
 - **Language**: Cyrius (native — not ported from Rust)
 - **Version**: SemVer, version file at `VERSION`
-- **Status**: Scaffolded, pre-implementation
+- **Status**: Implemented, approaching v1.0
 
 ## Genesis Layer
 

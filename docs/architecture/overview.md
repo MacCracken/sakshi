@@ -10,7 +10,7 @@ sakshi
 ├── trace      — log levels (error/warn/info/debug/trace), structured output
 ├── span       — enter/exit function tracking with timing
 ├── format     — fixed-buffer message formatting (timestamp, level, module, message)
-├── output     — output targets (serial, file, buffer, network)
+├── output     — output targets (stderr, file, ring buffer, UDP)
 └── config     — compile-time #ref TOML configuration
 ```
 
@@ -31,14 +31,14 @@ Application code
 
 Packed i64: `[63:32 context] [31:16 category] [15:0 error code]`
 
-Creation: `sakshi_error(code, category)` — single OR + shift, no heap.
+Creation: `sakshi_err_new(code, category)` — single OR + shift, no heap.
 Extraction: `sakshi_err_code(err)`, `sakshi_err_category(err)` — single AND + shift.
 
 Matches the agnosys packed error pattern that benchmarks at 6ns (1.8x faster than Rust Result<T,E>).
 
 ## Trace Format
 
-Fixed buffer output: `[timestamp] [LEVEL] [module] message`
+Fixed buffer output: `[timestamp] [LEVEL] message`
 
 No heap. No serde. No format strings. Direct byte writes to the output buffer.
 

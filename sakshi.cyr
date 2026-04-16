@@ -59,7 +59,7 @@ enum LogLevel {
 
 var _sk_log_level = 2;
 var _sk_stderr_fd = 2;
-var _sk_file_fd = 0;
+var _sk_file_fd = 0 - 1;
 var _sk_file_mode = 0;
 
 # ================================================================
@@ -162,7 +162,7 @@ fn sakshi_output_file(path) {
 
 # Close the log output file
 fn sakshi_output_file_close() {
-    if (_sk_file_mode == 1) { syscall(3, _sk_file_fd); _sk_file_fd = 0; }
+    if (_sk_file_mode == 1) { syscall(3, _sk_file_fd); _sk_file_fd = 0 - 1; }
     _sk_file_mode = 0;
     return 0;
 }

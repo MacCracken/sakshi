@@ -9,5 +9,6 @@
 # Called once from lib.cyr initialization.
 fn _sk_apply_config() {
     _sk_log_level = sk_cfg_log_level;
+    _sk_output_target = sk_cfg_output_target;
     return 0;
 }

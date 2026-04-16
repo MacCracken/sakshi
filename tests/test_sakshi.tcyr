@@ -40,6 +40,33 @@ sakshi_debug("debug visible", 13);
 sakshi_set_level(SK_INFO);
 
 # ================================================================
+# Level filtering
+# ================================================================
+test_group("level filtering");
+sakshi_set_level(SK_INFO);
+# debug and trace should be suppressed at INFO level (no crash, just silent)
+sakshi_debug("should not appear", 17);
+sakshi_trace("should not appear", 17);
+
+# set to TRACE, all levels should pass
+sakshi_set_level(SK_TRACE);
+assert_eq(sakshi_get_level(), SK_TRACE, "trace level set");
+sakshi_trace("trace visible", 13);
+sakshi_debug("debug visible", 13);
+sakshi_set_level(SK_INFO);
+
+# ================================================================
+# Output fd redirect
+# ================================================================
+test_group("output fd redirect");
+var devnull = syscall(2, "/dev/null", 1, 0);
+assert_gt(devnull, 0, "open /dev/null");
+sakshi_set_output_fd(devnull);
+sakshi_info("to devnull", 10);
+sakshi_set_output_fd(2);
+syscall(3, devnull);
+
+# ================================================================
 # File output
 # ================================================================
 test_group("file output");
@@ -47,5 +74,19 @@ var fd = sakshi_output_file("/tmp/sakshi_test.log");
 assert_gt(fd, 0, "file open");
 sakshi_info("file msg", 8);
 sakshi_output_file_close();
+
+# ================================================================
+# Error edge cases
+# ================================================================
+test_group("error edge: max values");
+var emax = sakshi_err_with_ctx(0xFFFF, 0xFFFF, 0xFFFFFFFF);
+assert_eq(sakshi_err_code(emax), 0xFFFF, "max code");
+assert_eq(sakshi_err_category(emax), 0xFFFF, "max cat");
+assert_eq(sakshi_err_context(emax), 0xFFFFFFFF, "max ctx");
+
+test_group("error edge: overflow clamp");
+var eover = sakshi_err_new(0x1FFFF, 0x1FFFF);
+assert_eq(sakshi_err_code(eover), 0xFFFF, "code clamped");
+assert_eq(sakshi_err_category(eover), 0xFFFF, "cat clamped");
 
 var r = assert_summary();
