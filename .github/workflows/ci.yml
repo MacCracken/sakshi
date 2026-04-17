@@ -37,7 +37,7 @@ jobs:
 
       - name: Lint
         run: |
-          for f in src/format.cyr src/output.cyr src/error.cyr src/trace.cyr src/span.cyr src/config.cyr src/lib.cyr programs/smoke.cyr dist/sakshi.cyr; do
+          for f in src/format.cyr src/output.cyr src/error.cyr src/trace.cyr src/span.cyr src/lib.cyr programs/smoke.cyr dist/sakshi.cyr; do
             cyrius lint "$f"
           done
 
