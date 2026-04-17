@@ -37,6 +37,11 @@ Flat patra-style refactor. **Breaking** — the hand-maintained `sakshi.cyr` (sl
 ### Fixed
 
 - **`docs/architecture/overview.md`** — trace module description now lists `fatal` alongside `error/warn/info/debug/trace` (added in v0.9.3).
+- **`src/span.cyr` doc-comment indentation** — normalized via `cyrius fmt` (code-example lines inside the `defer { … }` usage block were at column 1; `cyrfmt` expects them indented to match their enclosing block).
+
+### Known issues
+
+- The Cyrius 5.1.12 and 5.1.13 release tarballs' `cyrius` binary internally self-reports as `cyrius 5.1.10` when invoked with `cyrius version`. The tarball contents are correct; the stale version string is an upstream release-script bug in the Cyrius toolchain, not sakshi. Pinning by tarball name (`.cyrius-toolchain = 5.1.13`) still resolves the right artifact.
 
 ## [1.0.0] - 2026-04-16
 
