@@ -43,8 +43,33 @@ fn bench_trace_info() {
 }
 
 fn bench_trace_filtered() {
-    # SK_DEBUG = 3, default level = SK_INFO = 2, so this is filtered out
+    # SK_DEBUG = 4, default level = SK_INFO = 3, so this is filtered out
     sakshi_debug("filtered", 8);
+    return 0;
+}
+
+# ================================================================
+# Span enter/exit cycle — after v2.1.0 this is 2 _sk_now_ns calls
+# (one per op, was 4 total pre-v2.1.0: enter stack + enter emit +
+# exit elapsed + exit emit)
+# ================================================================
+
+fn bench_span_cycle() {
+    sakshi_span_enter("b", 1);
+    sakshi_span_exit();
+    return 0;
+}
+
+# ================================================================
+# Subscriber hook dispatch — fncall6 overhead measurement (v2.1.0)
+# ================================================================
+
+fn _bench_noop_hook(ts, level, category, msg, msg_len, elapsed_ns) {
+    return 0;
+}
+
+fn bench_hook_emit() {
+    sakshi_info("hk", 2);
     return 0;
 }
 
@@ -90,6 +115,18 @@ bench_report(b5);
 var b6 = bench_new("trace_filtered");
 bench_run_batch(b6, &bench_trace_filtered, 10000, 100);
 bench_report(b6);
+
+var b7 = bench_new("span_cycle");
+bench_run_batch(b7, &bench_span_cycle, 10000, 100);
+bench_report(b7);
+
+# Route events to a noop hook — isolates the fncall6 dispatch cost.
+sakshi_set_emit_hook(&_bench_noop_hook);
+var b8 = bench_new("hook_emit");
+bench_run_batch(b8, &bench_hook_emit, 10000, 100);
+bench_report(b8);
+sakshi_clear_emit_hook();
+if (devnull >= 0) { sakshi_set_output_fd(devnull); }
 
 # Cleanup
 if (devnull >= 0) { syscall(3, devnull); }

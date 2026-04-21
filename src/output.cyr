@@ -1,7 +1,10 @@
 # output.cyr — output targets for sakshi
-# Supports: stderr (default), file, ring buffer (binary), UDP (binary).
-# Target selection via sakshi_set_output at runtime.
-# Depends: format.cyr (for _sk_memcpy, _sk_now_ns, _sk_bin_write_hdr)
+# Supports: stderr (default), file, ring buffer (binary), UDP (binary), hook.
+# Target selection via sakshi_set_output / sakshi_set_emit_hook at runtime.
+# Depends: format.cyr (for _sk_memcpy, _sk_now_ns, _sk_bin_write_hdr),
+#          lib/fnptr.cyr (for subscriber hook dispatch — fncall6)
+
+include "lib/fnptr.cyr"
 
 # Output target constants
 enum OutputTarget {
@@ -9,10 +12,11 @@ enum OutputTarget {
     SK_OUT_FILE   = 1;
     SK_OUT_BUFFER = 2;
     SK_OUT_UDP    = 3;
+    SK_OUT_HOOK   = 4;
 }
 
-# Active output target — set by _sk_apply_config or sakshi_set_output
-var _sk_output_target = 0;
+# Active output target — set by sakshi_set_output
+var _sk_output_target = SK_OUT_STDERR;
 
 # ================================================================
 # Stderr target (default) — text format
@@ -81,7 +85,7 @@ fn sakshi_output_buffer() {
     store8(&meta, 1);
     store8(&meta + 1, 12);
     _sk_memcpy(&meta + 2, "sakshi", 6);
-    _sk_write_ring_event(0xFF, 0, &meta, 8);
+    _sk_write_ring_event(_sk_now_ns(), 0xFF, 0, &meta, 8);
     return 0;
 }
 
@@ -93,12 +97,13 @@ fn _sk_ring_put(byte) {
 }
 
 # Write a binary event into the ring buffer.
+# ts: pre-computed timestamp (callers share one _sk_now_ns per event)
 # level: log level, category: error category (0 for trace events)
 # msg: message pointer, msg_len: message length
-fn _sk_write_ring_event(level, category, msg, msg_len) {
+fn _sk_write_ring_event(ts, level, category, msg, msg_len) {
     # Build 12-byte header on stack, then copy into ring
     var hdr[12];
-    store64(&hdr, _sk_now_ns());
+    store64(&hdr, ts);
     store8(&hdr + 8, level);
     store8(&hdr + 9, category);
     store16(&hdr + 10, msg_len);
@@ -247,10 +252,10 @@ fn sakshi_output_udp_close() {
 }
 
 # Send a binary event packet over UDP.
+# ts: pre-computed timestamp (callers share one _sk_now_ns per event)
 # Packet format: same 12-byte header + message bytes.
-fn _sk_write_udp_event(level, category, msg, msg_len) {
+fn _sk_write_udp_event(ts, level, category, msg, msg_len) {
     if (_sk_udp_fd < 0) { return 0; }
-    var ts = _sk_now_ns();
 
     # Build packet in a stack buffer (12 header + msg, max 256)
     var pkt[268];
@@ -274,6 +279,44 @@ fn _sk_write_udp_event(level, category, msg, msg_len) {
 # ================================================================
 fn sakshi_ipv4(a, b, c, d) {
     return a | (b << 8) | (c << 16) | (d << 24);
+}
+
+# ================================================================
+# Subscriber hook target — fn-ptr dispatch (roadmap #7, v2.1.0)
+# ================================================================
+# Register a callback fn and route every event through it. Enables
+# downstream consumers (OTel, custom aggregators, in-memory sinks)
+# to receive structured events without sakshi knowing their format.
+#
+# Hook signature (6 args, matches fncall6 ABI):
+#   fn my_hook(ts, level, category, msg, msg_len, elapsed_ns)
+#     ts         — monotonic nanoseconds, shared across the event
+#     level      — SK_* log level, or SK_SPAN_ENTER (10) / SK_SPAN_EXIT (11)
+#     category   — ERR_CAT_* for log events, 0 for span events
+#     msg        — message / span-name pointer (NOT NUL-terminated)
+#     msg_len    — byte length of msg
+#     elapsed_ns — span EXIT duration, 0 otherwise
+# Return value is ignored.
+#
+# Consumers of the generated dist/sakshi.cyr bundle MUST also
+# `include "lib/fnptr.cyr"` before including sakshi (the bundle
+# strips its includes at generation time). Sibling-checkout
+# consumers get the include transitively via src/lib.cyr.
+var _sk_emit_hook: i64 = 0;
+
+# Install a subscriber — all subsequent events are routed to fp.
+# Pass `&my_hook_fn` to register. Implicitly sets target to SK_OUT_HOOK.
+fn sakshi_set_emit_hook(fp) {
+    _sk_emit_hook = fp;
+    _sk_output_target = SK_OUT_HOOK;
+    return 0;
+}
+
+# Uninstall the subscriber and revert output to stderr.
+fn sakshi_clear_emit_hook() {
+    _sk_emit_hook = 0;
+    _sk_output_target = SK_OUT_STDERR;
+    return 0;
 }
 
 # ================================================================
@@ -305,35 +348,47 @@ fn _sk_level_str(level, out_str, out_len) {
 }
 
 # Event write — used by trace.cyr for ring buffer and UDP (binary),
-# falls back to text formatting for stderr/file.
+# falls back to text formatting for stderr/file. Computes ts once.
 fn _sk_emit(level, category, msg, msg_len) {
+    var ts = _sk_now_ns();
+    if (_sk_output_target == SK_OUT_HOOK) {
+        if (_sk_emit_hook != 0) {
+            fncall6(_sk_emit_hook, ts, level, category, msg, msg_len, 0);
+        }
+        return 0;
+    }
     if (_sk_output_target == SK_OUT_BUFFER) {
-        return _sk_write_ring_event(level, category, msg, msg_len);
+        return _sk_write_ring_event(ts, level, category, msg, msg_len);
     }
     if (_sk_output_target == SK_OUT_UDP) {
-        return _sk_write_udp_event(level, category, msg, msg_len);
+        return _sk_write_udp_event(ts, level, category, msg, msg_len);
     }
     # Text targets — format and write
     var buf[256];
     var level_str: i64 = 0;
     var level_len: i64 = 0;
     _sk_level_str(level, &level_str, &level_len);
-    var ts = _sk_now_ns();
     var len = _sk_fmt_line(&buf, 256, ts, level_str, level_len, msg, msg_len);
     _sk_write(&buf, len);
     return 0;
 }
 
-# Span emit — binary for buffer/UDP, text for stderr/file
-fn _sk_emit_span(action_level, action_str, action_len, name, name_len, elapsed_ns) {
+# Span emit — binary for buffer/UDP, text for stderr/file.
+# ts: caller-supplied (span_enter/span_exit already read the clock).
+fn _sk_emit_span(ts, action_level, action_str, action_len, name, name_len, elapsed_ns) {
+    if (_sk_output_target == SK_OUT_HOOK) {
+        if (_sk_emit_hook != 0) {
+            fncall6(_sk_emit_hook, ts, action_level, 0, name, name_len, elapsed_ns);
+        }
+        return 0;
+    }
     if (_sk_output_target == SK_OUT_BUFFER) {
-        return _sk_write_ring_event(action_level, 0, name, name_len);
+        return _sk_write_ring_event(ts, action_level, 0, name, name_len);
     }
     if (_sk_output_target == SK_OUT_UDP) {
-        return _sk_write_udp_event(action_level, 0, name, name_len);
+        return _sk_write_udp_event(ts, action_level, 0, name, name_len);
     }
     var buf[256];
-    var ts = _sk_now_ns();
     var len = _sk_fmt_span(&buf, 256, ts, action_str, action_len, name, name_len, elapsed_ns);
     _sk_write(&buf, len);
     return 0;

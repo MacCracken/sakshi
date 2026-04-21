@@ -21,20 +21,24 @@ enum _SkSpanConst {
     _SK_MAX_SPANS = 16;
 }
 
-# Enter a span — push name + timestamp onto the stack
+# Enter a span — push name + timestamp onto the stack.
+# One _sk_now_ns per call: the same reading seeds both the stack start time
+# and the emitted event's timestamp.
 fn sakshi_span_enter(name, name_len) {
     if (_sk_span_depth >= _SK_MAX_SPANS) { return 0; }
+    var ts = _sk_now_ns();
     var offset = _sk_span_depth * 24;
     store64(&_sk_span_stack + offset, name);
     store64(&_sk_span_stack + offset + 8, name_len);
-    store64(&_sk_span_stack + offset + 16, _sk_now_ns());
+    store64(&_sk_span_stack + offset + 16, ts);
     _sk_span_depth = _sk_span_depth + 1;
 
-    _sk_emit_span(SK_SPAN_ENTER, "ENTER", 5, name, name_len, 0);
+    _sk_emit_span(ts, SK_SPAN_ENTER, "ENTER", 5, name, name_len, 0);
     return 0;
 }
 
-# Exit the current span — pop, compute elapsed, emit
+# Exit the current span — pop, compute elapsed, emit.
+# One _sk_now_ns per call: used for both elapsed computation and event ts.
 fn sakshi_span_exit() {
     if (_sk_span_depth <= 0) { return 0; }
     _sk_span_depth = _sk_span_depth - 1;
@@ -42,9 +46,10 @@ fn sakshi_span_exit() {
     var name = load64(&_sk_span_stack + offset);
     var name_len = load64(&_sk_span_stack + offset + 8);
     var start = load64(&_sk_span_stack + offset + 16);
-    var elapsed = _sk_now_ns() - start;
+    var ts = _sk_now_ns();
+    var elapsed = ts - start;
 
-    _sk_emit_span(SK_SPAN_EXIT, "EXIT", 4, name, name_len, elapsed);
+    _sk_emit_span(ts, SK_SPAN_EXIT, "EXIT", 4, name, name_len, elapsed);
     return elapsed;
 }
 

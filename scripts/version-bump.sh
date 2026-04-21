@@ -7,8 +7,8 @@ NEW_VERSION="${1:?Usage: $0 <new-version>}"
 # VERSION file (source of truth)
 echo "$NEW_VERSION" > VERSION
 
-# cyrius.toml
-sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" cyrius.toml
+# cyrius.cyml
+sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" cyrius.cyml
 
 # CHANGELOG.md — add section header if missing
 if ! grep -q "## \[$NEW_VERSION\]" CHANGELOG.md; then
@@ -17,10 +17,10 @@ fi
 
 echo "Bumped to $NEW_VERSION"
 echo ""
-echo "Updated: VERSION, cyrius.toml, CHANGELOG.md"
+echo "Updated: VERSION, cyrius.cyml, CHANGELOG.md"
 echo ""
 echo "Next steps:"
-echo "  git add VERSION cyrius.toml CHANGELOG.md"
+echo "  git add VERSION cyrius.cyml CHANGELOG.md"
 echo "  git commit -m 'release: $NEW_VERSION'"
 echo "  git tag $NEW_VERSION"
 echo "  git push origin main --tags"

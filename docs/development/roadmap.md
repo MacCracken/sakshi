@@ -1,23 +1,29 @@
 # Sakshi Development Roadmap
 
-> **v2.0.0** — flat patra-style layout, single `dist/sakshi.cyr` bundle, dead-config removed. Still bundled in Cyrius stdlib (v5.1.1+). 35 tests, security audited, zero-alloc. Toolchain pinned to Cyrius 5.1.13.
+> **v2.1.0** — subscriber vtable (`sakshi_set_emit_hook`), compile-time per-level disables (`SAKSHI_DISABLE_<LEVEL>`), span-path perf fix (one `_sk_now_ns` per enter/exit instead of two). Flat patra-style layout, single `dist/sakshi.cyr` bundle. 45 tests, zero-alloc, security audited. Toolchain pinned to Cyrius 5.5.11.
 
 ---
 
-## Completed since v1.0.0
+## Completed
 
+- **v2.1.0** — roadmap #7 done (fnptr-backed subscriber hook) + roadmap #1 partially unlocked (discrete `SAKSHI_DISABLE_<LEVEL>` defines — workaround for the still-absent `#if <expr>`). Span perf: `sakshi_span_enter`/`_exit` were doing two `_sk_now_ns` syscalls each; refactored emit layer so callers share a single reading through `_sk_emit_span(ts, ...)`. Adds `SK_OUT_HOOK` (4) to `OutputTarget`; hook receives `(ts, level, category, msg, msg_len, elapsed_ns)` via `fncall6`.
 - **v2.0.0** — flat patra-style refactor. Removed root-level `sakshi.cyr` / `sakshi_full.cyr` bundles; single generated `dist/sakshi.cyr` + modular `src/lib.cyr`. Reorganized tests to `tests/tcyr/` + `tests/bcyr/`. Deleted dead `src/config.cyr` + `sakshi.toml` — `#ref` mechanism never resolved on 5.x, defaults now baked at declaration sites. Added `programs/smoke.cyr` (DCE build target), `scripts/bundle.sh` (bundler, CI-enforced in-sync), `fuzz/` placeholder. Scaffold modernized to match AGNOS first-party template (Ark reference): manifest migrated to `cyrius.cyml`, CI/release workflows aligned (`.cyrius-toolchain` pin, `cyrius deps`, per-file `cyrius lint` + `cyrius fmt --check`, `CYRIUS_DCE=1` build, explicit test/bench file paths). Toolchain bumped to Cyrius 5.1.13.
 
-## Post-v1.0 — Future Work
+## Post-v2.1.0 — Future Work
 
-Items from P(-1) research. Some previously blocked on compiler features.
+Each row's **Requires** column was re-audited against Cyrius 5.5.11 on 2026-04-20. Where an item is still blocked, the **Unblocks when** column names the concrete Cyrius feature that has to land first (and whether it appears on the current cyrius roadmap arc).
 
-| # | Item | Requires | Status | Source |
-|---|------|----------|--------|--------|
-| 1 | Compile-time log level elimination | `#if` value-comparison + `#define` config | **Unblocked** (Cyrius 3.x has `#if`). Config is no longer `#ref`-based — a thin `#define SAKSHI_LEVEL=<n>` in consumer `cyrius.cyml` `defines` would do it. | Rust `log`, Linux kernel |
-| 2 | Deferred formatting (string ID + raw args) | Compiler string interning | Blocked | Embedded Rust defmt |
-| 3 | Per-module log levels | Module identity system | Blocked | LTTng, Tokio tracing |
-| 4 | Per-CPU ring buffers | CPU-affinity primitives | Blocked | Linux ftrace |
-| 5 | rdtsc/CNTVCT_EL0 cycle counter timestamps | Bare-metal TSC access | Blocked | ftrace, LTTng |
-| 6 | Structured typed fields (key-value per event) | Generics or compile-time layout | Blocked | OTel, Tokio tracing |
-| 7 | Subscriber/vtable pattern for open-ended output targets | Function pointers | Feasible | Rust tracing |
+| # | Item | Requires | Status (5.5.11) | Unblocks when |
+|---|------|----------|-----------------|---------------|
+| 1 | Compile-time log level elimination | `#if <expr>` numeric thresholds + `-D NAME=VAL` | **Partial — shipped workaround in v2.1.0.** `cyrius.cyml` `defines`/`-D NAME` resolve `#ifdef`/`#ifndef` at module scope (not inside fn bodies — sakshi dual-defines each public fn around the guard). `#if SAKSHI_LEVEL <= 3`-style numeric comparisons are not yet in the preprocessor; grep of cyrius 5.5.11 parse.cyr finds only `PARSE_IFDEF` / `PARSE_IFNDEF` tokens. | Cyrius adds a `#if <int-expr>` evaluator. No signal in the current 5.5.x arc (Windows PE + Mach-O work dominates); not on the v6.0.0 cleanup list. **Best-effort unblock: v6.x.** |
+| 2 | Deferred formatting (string ID + raw args) | Compiler string interning | **Blocked.** No `#intern` / `#strid` / string-registry infrastructure in cyrius 5.5.11 stdlib or compiler; zero matches for interning across parse.cyr + lex.cyr. Defmt-style deferred formatting needs a compile-time string table + an ID-allocation pass. | No upstream signal. Would be a significant compiler project (needs a registry pass + symbol-per-literal + linker-time merge). **No estimate — probably not in 5.x.** |
+| 3 | Per-module log levels | Module identity (`__MODULE__`, `__FILE__`, or a stable module-id assignment) | **Blocked.** No `__MODULE__` / `__FILE__` in cyrius 5.5.11. Parser emits no file-tracking metadata. Manual workaround: consumer threads a `mod_id` constant through every call — but that's an API change we haven't scoped. | Cyrius adds either predefined `__FILE__`-style macros or a `#module NAME` directive. Not tied to any named milestone. **Best-effort: v6.x-ish.** |
+| 4 | Per-CPU ring buffers | CPU-affinity syscall wrappers + atomics | **Blocked.** `lib/syscalls*.cyr` has no `sched_getcpu` / `sched_setaffinity` / `getcpu` wrappers; no `atomic_*` primitives in stdlib. Cyrius 5.5.x pillar list mentions "atomics + memory barriers, runtime thread-safety audit" as queued — that would land the foundation but not the CPU primitives. | Two cyrius additions needed: (a) atomics (queued in 5.5.x pillars), (b) sched-affinity syscall wrappers (no listed plan). **(a) likely v5.6.x; (b) no estimate.** |
+| 5 | rdtsc / CNTVCT_EL0 cycle-counter timestamps | Inline asm that returns a u64 + startup calibration | **Unblocked mechanically, unshipped.** Cyrius inline asm works and the known [include-boundary-stores bug](https://github.com/MacCracken/cyrius/blob/main/docs/development/issues/inline-asm-stores-silently-drop-when-fn-included.md) only affects writes through caller-supplied pointers — rdtsc's `rdx:rax → i64 return` pattern doesn't trip it. Remaining work is sakshi-side: one-shot calibration (rdtsc before + after a known interval) and a rate cache. No serialization (LFENCE/RDTSCP) chosen yet. | Already unblocked — sakshi owns the remaining design. **Queued for v2.2.0 or v2.3.0** once we pick a calibration policy (invariant-TSC-only vs. soft fallback to `clock_gettime`). |
+| 6 | Structured typed fields (key-value per event) | Generics, templates, or comptime layout | **Blocked.** Cyrius is monomorphic — no `struct<T>`, no templates, no `comptime`. Stdlib `hashmap.cyr` hardcodes `cstr` and `hashmap_str_keys.cyr` hardcodes `Str` because parametric types don't exist. | No cyrius plan for generics. Typed-fields work would need a non-trivial type-system extension. **No estimate — probably v6.x+ if ever.** Pragmatic alternative: build a sakshi-side schema struct that consumers populate and pass via the v2.1.0 hook. |
+| 7 | Subscriber/vtable pattern for open-ended output targets | Function pointers | **Done — v2.1.0.** `sakshi_set_emit_hook(&fn)` + `sakshi_clear_emit_hook()`. Dispatches log + span events through `fncall6` (lib/fnptr.cyr). Hook signature: `(ts, level, category, msg, msg_len, elapsed_ns)`. | — |
+
+### Cyrius-side field notes surfaced while doing the audit
+
+- **Preprocessor scope**: `#ifdef` / `#ifndef` only evaluate at module scope in 5.5.11 — using them inside a fn body emits the gated code unconditionally. Sakshi works around by dual-defining each public `sakshi_<level>` fn at outer scope. Worth filing upstream as a limitation / bug — the failure mode is silent (no diagnostic), which cost a debug round on this audit.
+- **Inline-asm include-boundary bug** (`cyrius/docs/development/issues/inline-asm-stores-silently-drop-when-fn-included.md`): scoped strictly to stores through caller-supplied pointers. fnptr.cyr's asm stores to `[rbp-N]` locals and works fine from included sites; rdtsc (roadmap #5) follows the same pattern and will be safe.

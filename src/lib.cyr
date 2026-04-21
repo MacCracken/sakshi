@@ -1,7 +1,9 @@
 # lib.cyr — sakshi public API
 # Include this file to use sakshi in your Cyrius project.
 #
-# Usage: include "sakshi/src/lib.cyr"
+# Usage:
+#   include "src/lib.cyr"      (sibling checkout — Cyrius stdlib, AGNOS crates)
+#   include "lib/sakshi.cyr"   (external consumer — generated dist bundle)
 #
 # Provides:
 #   Error:  sakshi_err_new, sakshi_err_with_ctx, sakshi_err_at_span,
@@ -15,7 +17,8 @@
 #           sakshi_output_file, sakshi_output_file_close,
 #           sakshi_output_buffer, sakshi_ring_read_raw, sakshi_ring_len,
 #           sakshi_ring_clear, sakshi_ring_event_count, sakshi_ring_decode_event,
-#           sakshi_output_udp, sakshi_output_udp_close, sakshi_ipv4
+#           sakshi_output_udp, sakshi_output_udp_close, sakshi_ipv4,
+#           sakshi_set_emit_hook, sakshi_clear_emit_hook
 #
 # Defaults: log level = INFO (3), output target = stderr. Override at runtime
 # via sakshi_set_level / sakshi_set_output before first emit.

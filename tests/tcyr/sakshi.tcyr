@@ -2,6 +2,7 @@
 include "lib/string.cyr"
 include "lib/fmt.cyr"
 include "lib/assert.cyr"
+include "lib/fnptr.cyr"
 
 include "src/lib.cyr"
 
@@ -158,5 +159,43 @@ test_group("error edge: overflow clamp");
 var eover = sakshi_err_new(0x1FFFF, 0x1FFFF);
 assert_eq(sakshi_err_code(eover), 0xFFFF, "code clamped");
 assert_eq(sakshi_err_category(eover), 0xFFFF, "cat clamped");
+
+# ================================================================
+# Subscriber hook (v2.1.0, roadmap #7)
+# ================================================================
+test_group("subscriber hook");
+var hk_count: i64 = 0;
+var hk_last_level: i64 = 0;
+var hk_last_msg_len: i64 = 0;
+var hk_last_elapsed: i64 = 0;
+
+fn _sk_test_hook(ts, level, category, msg, msg_len, elapsed_ns) {
+    hk_count = hk_count + 1;
+    hk_last_level = level;
+    hk_last_msg_len = msg_len;
+    hk_last_elapsed = elapsed_ns;
+    return 0;
+}
+
+sakshi_set_emit_hook(&_sk_test_hook);
+sakshi_info("hi", 2);
+assert_eq(hk_count, 1, "hook fired for info");
+assert_eq(hk_last_level, 3, "hook saw SK_INFO");
+assert_eq(hk_last_msg_len, 2, "hook saw msg_len");
+assert_eq(hk_last_elapsed, 0, "log events pass elapsed=0");
+
+sakshi_span_enter("scope", 5);
+assert_eq(hk_count, 2, "hook fired for span_enter");
+assert_eq(hk_last_level, 10, "hook saw SK_SPAN_ENTER");
+
+sakshi_span_exit();
+assert_eq(hk_count, 3, "hook fired for span_exit");
+assert_eq(hk_last_level, 11, "hook saw SK_SPAN_EXIT");
+assert_gt(hk_last_elapsed, 0, "span_exit reported elapsed");
+
+sakshi_clear_emit_hook();
+sakshi_set_output_fd(2);
+sakshi_info("post-clear", 10);
+assert_eq(hk_count, 3, "hook not fired after clear");
 
 var r = assert_summary();

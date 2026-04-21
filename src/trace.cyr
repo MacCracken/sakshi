@@ -1,7 +1,15 @@
 # trace.cyr — log levels and structured output for sakshi
-# Routes through _sk_emit: binary for buffer/UDP, text for stderr/file.
+# Routes through _sk_emit: binary for buffer/UDP, text for stderr/file/hook.
 # Zero heap allocation.
 # Depends: format.cyr, output.cyr (included via lib.cyr)
+#
+# Compile-time level elimination (v2.1.0, roadmap #1 workaround):
+# Define any of SAKSHI_DISABLE_FATAL / _ERROR / _WARN / _INFO / _DEBUG /
+# _TRACE via `cyrius build -D SAKSHI_DISABLE_<LEVEL>` (or the cyml
+# `defines` array) to drop that level's emit path at compile time.
+# The public fn stays defined (source compat); its body becomes an
+# early return. `#if <expr>` for numeric thresholds is not yet in the
+# preprocessor — discrete per-level flags are the available primitive.
 
 # Log levels — lower value = higher severity
 enum LogLevel {
@@ -13,11 +21,6 @@ enum LogLevel {
     SK_TRACE = 5;
 }
 
-# Note: levels renumbered in v0.9.3 to add SK_FATAL.
-# v0.9.2: ERROR=0, WARN=1, INFO=2, DEBUG=3, TRACE=4
-# v0.9.3: FATAL=0, ERROR=1, WARN=2, INFO=3, DEBUG=4, TRACE=5
-# Consumers using enum names (SK_INFO etc.) are unaffected.
-
 # Span action pseudo-levels (for binary event encoding)
 enum SpanAction {
     SK_SPAN_ENTER = 10;
@@ -25,8 +28,7 @@ enum SpanAction {
 }
 
 # Current log level — messages above this level are suppressed.
-# Default: SK_INFO (show fatal, error, warn, info)
-var _sk_log_level = 3;
+var _sk_log_level = SK_INFO;
 
 # Set the active log level
 fn sakshi_set_level(level) {
@@ -46,40 +48,75 @@ fn _sk_log(level, msg, msg_len) {
     return 0;
 }
 
-# Public API — each takes a message string and its byte length
+# Public API — each takes a message string and its byte length.
+# Each level has a dual definition: the real emit path, and an early-
+# return stub selected when `SAKSHI_DISABLE_<LEVEL>` is defined. The
+# cyrius preprocessor (5.5.11) only evaluates `#ifdef` / `#ifndef`
+# at module scope, not inside function bodies — so the gating has to
+# sit at the fn definition level, not around the emit call.
 
-# Log a fatal message (always emitted regardless of level)
+# Log a fatal message (always emitted regardless of runtime level)
+#ifndef SAKSHI_DISABLE_FATAL
 fn sakshi_fatal(msg, msg_len) {
     _sk_log(SK_FATAL, msg, msg_len);
     return 0;
 }
+#endif
+#ifdef SAKSHI_DISABLE_FATAL
+fn sakshi_fatal(msg, msg_len) { return 0; }
+#endif
 
 # Log an error message to the configured output
+#ifndef SAKSHI_DISABLE_ERROR
 fn sakshi_error(msg, msg_len) {
     _sk_log(SK_ERROR, msg, msg_len);
     return 0;
 }
+#endif
+#ifdef SAKSHI_DISABLE_ERROR
+fn sakshi_error(msg, msg_len) { return 0; }
+#endif
 
 # Log a warning message
+#ifndef SAKSHI_DISABLE_WARN
 fn sakshi_warn(msg, msg_len) {
     _sk_log(SK_WARN, msg, msg_len);
     return 0;
 }
+#endif
+#ifdef SAKSHI_DISABLE_WARN
+fn sakshi_warn(msg, msg_len) { return 0; }
+#endif
 
 # Log an info message
+#ifndef SAKSHI_DISABLE_INFO
 fn sakshi_info(msg, msg_len) {
     _sk_log(SK_INFO, msg, msg_len);
     return 0;
 }
+#endif
+#ifdef SAKSHI_DISABLE_INFO
+fn sakshi_info(msg, msg_len) { return 0; }
+#endif
 
 # Log a debug message
+#ifndef SAKSHI_DISABLE_DEBUG
 fn sakshi_debug(msg, msg_len) {
     _sk_log(SK_DEBUG, msg, msg_len);
     return 0;
 }
+#endif
+#ifdef SAKSHI_DISABLE_DEBUG
+fn sakshi_debug(msg, msg_len) { return 0; }
+#endif
 
 # Log a trace message
+#ifndef SAKSHI_DISABLE_TRACE
 fn sakshi_trace(msg, msg_len) {
     _sk_log(SK_TRACE, msg, msg_len);
     return 0;
 }
+#endif
+#ifdef SAKSHI_DISABLE_TRACE
+fn sakshi_trace(msg, msg_len) { return 0; }
+#endif

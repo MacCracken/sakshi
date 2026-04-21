@@ -5,6 +5,39 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-04-20
+
+Toolchain bump, subscriber-hook API (roadmap #7 done), compile-time level disables (roadmap #1 partial), span-path perf fix, housekeeping. No breaking changes — 2.0.0 API surface is a strict subset of 2.1.0.
+
+### Added
+
+- **`sakshi_set_emit_hook(fp)` / `sakshi_clear_emit_hook()`** — subscriber-vtable output target (`SK_OUT_HOOK = 4`). Closes roadmap item #7. Hook signature is `fn(ts, level, category, msg, msg_len, elapsed_ns)` and covers both log and span events (span enter/exit use level `SK_SPAN_ENTER` / `SK_SPAN_EXIT`; log events use `elapsed_ns = 0`). Dispatch goes through `lib/fnptr.cyr`'s `fncall6`; external consumers of `dist/sakshi.cyr` must `include "lib/fnptr.cyr"` before the sakshi include (the bundle strips its own includes). In-benchmark cost: **1 µs per event** when routed to a no-op hook — faster than the stderr path (2 µs) because the hook bypasses text formatting and the write syscall. `tests/tcyr/sakshi.tcyr` now has a 10-assertion hook regression.
+- **`SAKSHI_DISABLE_FATAL` / `_ERROR` / `_WARN` / `_INFO` / `_DEBUG` / `_TRACE` compile-time defines** — partially unblocks roadmap item #1. `cyrius build -D SAKSHI_DISABLE_TRACE` replaces the corresponding public fn's body with an early return so per-call cost drops from ~1–2 µs to the overhead of an empty fn. Binary-size savings only appear when consumer code also drops the call site (DCE then removes the stub). `#if <expr>` numeric thresholds are still absent from cyrius 5.5.11, so we use one flag per level rather than `SAKSHI_LEVEL=<n>`.
+- **Span bench** (`tests/bcyr/sakshi.bcyr :: span_cycle`) and **hook bench** (`hook_emit`). `span_cycle` lands at 4 µs (enter + exit), down from ~6 µs pre-fix. `hook_emit` is 1 µs.
+- **`OutputTarget::SK_OUT_HOOK = 4`** — new enum variant.
+
+### Changed
+
+- **Toolchain bumped to Cyrius 5.5.11** (from 5.1.13). `.cyrius-toolchain`, `cyrius.cyml`, `lib/` symlink all moved. Cyrius 5.5.2's enum-constant fold inlines `SK_*` / `ERR_CAT_*` values at call sites; `err_with_ctx` max tightened from 12 → 7 ns as a side effect. The stale "cyrius 5.1.10" self-report noted in our 2.0.0 Known issues is resolved upstream.
+- **Centralized timestamp on span + emit paths** (`src/span.cyr`, `src/output.cyr`). `sakshi_span_enter` / `_exit` were each doing two `_sk_now_ns` syscalls (one in the caller, another inside `_sk_emit_span`). Refactor: caller reads the clock once, passes `ts` through `_sk_emit_span(ts, ...)` → `_sk_write_ring_event(ts, ...)` / `_sk_write_udp_event(ts, ...)`. Saves ~1 µs per span event on x86_64 Linux (one syscall at ~1 µs each).
+- **`src/trace.cyr`** — `_sk_log_level` default now `SK_INFO` instead of magic `3`; doc comment explains the dual-definition gate pattern forced by the preprocessor-in-fn-body limitation (see Notes on Cyrius 5.5.11).
+- **`src/output.cyr`** — `_sk_output_target` default now `SK_OUT_STDERR` instead of magic `0`. New `include "lib/fnptr.cyr"` at the top (needed by the hook dispatch; external bundle consumers inherit this requirement).
+- **`src/lib.cyr`** — API listing adds `sakshi_set_emit_hook`, `sakshi_clear_emit_hook`; usage comment now lists the two canonical include forms.
+- **`docs/development/roadmap.md`** — post-v1.0 table rewritten with evidence per row and an "Unblocks when" column pointing at the specific Cyrius feature needed.
+
+### Fixed
+
+- **`scripts/version-bump.sh`** — was `sed`-patching `cyrius.toml` (stale path from before the 2.0.0 flatten). The manifest version was silently skipped on every bump since 2.0.0. Now targets `cyrius.cyml`.
+
+### Removed
+
+- **Historical v0.9.2 → v0.9.3 log-level renumber note** in `src/trace.cyr`. Stale; the CHANGELOG owns it.
+
+### Notes on Cyrius 5.5.11
+
+- **Preprocessor scope**: `#ifdef` / `#ifndef` are only evaluated at module scope in 5.5.11 — a guard placed inside a fn body does nothing. The `SAKSHI_DISABLE_<LEVEL>` pattern therefore dual-defines each public `sakshi_<level>` at outer scope. Worth filing upstream; failure mode is silent (no diagnostic).
+- **Inline-asm include-boundary bug** ([cyrius/docs/development/issues/inline-asm-stores-silently-drop-when-fn-included.md](https://github.com/MacCracken/cyrius)): scoped to stores through caller-supplied pointers. fnptr.cyr (used by the hook) stores only to `[rbp-N]` locals and is safe. rdtsc-based timestamps (roadmap #5) follow the same pattern and are now mechanically unblocked; landing deferred to 2.2.0 / 2.3.0 pending a calibration policy.
+
 ## [2.0.0] - 2026-04-16
 
 Flat patra-style refactor. **Breaking** — the hand-maintained `sakshi.cyr` (slim) and `sakshi_full.cyr` (full) bundles at the repo root are gone. Consumers include `src/lib.cyr` directly, or pull the generated `dist/sakshi.cyr` single-file bundle. Scaffold also modernized to match the AGNOS first-party template (Ark reference).
