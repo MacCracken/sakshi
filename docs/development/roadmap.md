@@ -1,19 +1,20 @@
 # Sakshi Development Roadmap
 
-> **v2.1.0** — subscriber vtable (`sakshi_set_emit_hook`), compile-time per-level disables (`SAKSHI_DISABLE_<LEVEL>`), span-path perf fix (one `_sk_now_ns` per enter/exit instead of two). Flat patra-style layout, single `dist/sakshi.cyr` bundle. 45 tests, zero-alloc, security audited. Toolchain pinned to Cyrius 5.5.11.
+> **v2.1.1** — toolchain bump to Cyrius 5.7.48 (from 5.5.11). No source changes; 45 tests pass, bundle byte-identical. v2.1.0 feature set unchanged: subscriber vtable (`sakshi_set_emit_hook`), compile-time per-level disables (`SAKSHI_DISABLE_<LEVEL>`), span-path perf fix (one `_sk_now_ns` per enter/exit instead of two). Flat patra-style layout, single `dist/sakshi.cyr` bundle. Zero-alloc, security audited.
 
 ---
 
 ## Completed
 
+- **v2.1.1** — toolchain bump to Cyrius 5.7.48. Lint clean, 45/45 tests pass, `dist/sakshi.cyr` regenerates byte-identical. No roadmap items unblocked by the bump (the still-missing features — `#if <int-expr>`, `__MODULE__`/`__FILE__`, generics, sched-affinity wrappers — remain absent on the 5.7.x arc). Bench: `trace_info` 924 ns, `hook_emit` 398 ns, `span_cycle` 1 µs, `timestamp` 373 ns, `err_with_ctx` 8 ns, `err_unpack` 16 ns.
 - **v2.1.0** — roadmap #7 done (fnptr-backed subscriber hook) + roadmap #1 partially unlocked (discrete `SAKSHI_DISABLE_<LEVEL>` defines — workaround for the still-absent `#if <expr>`). Span perf: `sakshi_span_enter`/`_exit` were doing two `_sk_now_ns` syscalls each; refactored emit layer so callers share a single reading through `_sk_emit_span(ts, ...)`. Adds `SK_OUT_HOOK` (4) to `OutputTarget`; hook receives `(ts, level, category, msg, msg_len, elapsed_ns)` via `fncall6`.
 - **v2.0.0** — flat patra-style refactor. Removed root-level `sakshi.cyr` / `sakshi_full.cyr` bundles; single generated `dist/sakshi.cyr` + modular `src/lib.cyr`. Reorganized tests to `tests/tcyr/` + `tests/bcyr/`. Deleted dead `src/config.cyr` + `sakshi.toml` — `#ref` mechanism never resolved on 5.x, defaults now baked at declaration sites. Added `programs/smoke.cyr` (DCE build target), `scripts/bundle.sh` (bundler, CI-enforced in-sync), `fuzz/` placeholder. Scaffold modernized to match AGNOS first-party template (Ark reference): manifest migrated to `cyrius.cyml`, CI/release workflows aligned (`.cyrius-toolchain` pin, `cyrius deps`, per-file `cyrius lint` + `cyrius fmt --check`, `CYRIUS_DCE=1` build, explicit test/bench file paths). Toolchain bumped to Cyrius 5.1.13.
 
-## Post-v2.1.0 — Future Work
+## Post-v2.1.1 — Future Work
 
-Each row's **Requires** column was re-audited against Cyrius 5.5.11 on 2026-04-20. Where an item is still blocked, the **Unblocks when** column names the concrete Cyrius feature that has to land first (and whether it appears on the current cyrius roadmap arc).
+Each row's **Requires** column was re-audited against Cyrius 5.5.11 on 2026-04-20 and spot-checked on 5.7.48 for the 2.1.1 bump (no row moved). Where an item is still blocked, the **Unblocks when** column names the concrete Cyrius feature that has to land first (and whether it appears on the current cyrius roadmap arc).
 
-| # | Item | Requires | Status (5.5.11) | Unblocks when |
+| # | Item | Requires | Status (5.7.48) | Unblocks when |
 |---|------|----------|-----------------|---------------|
 | 1 | Compile-time log level elimination | `#if <expr>` numeric thresholds + `-D NAME=VAL` | **Partial — shipped workaround in v2.1.0.** `cyrius.cyml` `defines`/`-D NAME` resolve `#ifdef`/`#ifndef` at module scope (not inside fn bodies — sakshi dual-defines each public fn around the guard). `#if SAKSHI_LEVEL <= 3`-style numeric comparisons are not yet in the preprocessor; grep of cyrius 5.5.11 parse.cyr finds only `PARSE_IFDEF` / `PARSE_IFNDEF` tokens. | Cyrius adds a `#if <int-expr>` evaluator. No signal in the current 5.5.x arc (Windows PE + Mach-O work dominates); not on the v6.0.0 cleanup list. **Best-effort unblock: v6.x.** |
 | 2 | Deferred formatting (string ID + raw args) | Compiler string interning | **Blocked.** No `#intern` / `#strid` / string-registry infrastructure in cyrius 5.5.11 stdlib or compiler; zero matches for interning across parse.cyr + lex.cyr. Defmt-style deferred formatting needs a compile-time string table + an ID-allocation pass. | No upstream signal. Would be a significant compiler project (needs a registry pass + symbol-per-literal + linker-time merge). **No estimate — probably not in 5.x.** |
