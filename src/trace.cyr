@@ -10,6 +10,10 @@
 # The public fn stays defined (source compat); its body becomes an
 # early return. `#if <expr>` for numeric thresholds is not yet in the
 # preprocessor — discrete per-level flags are the available primitive.
+#
+# v2.2.1: cyrius 5.7.48 evaluates user-macro `#ifdef` / `#ifndef` inside
+# fn bodies (verified via probe). Each level is now a single fn with the
+# guard around the `_sk_log` call — no more dual-define at outer scope.
 
 # Log levels — lower value = higher severity
 enum LogLevel {
@@ -49,74 +53,53 @@ fn _sk_log(level, msg, msg_len) {
 }
 
 # Public API — each takes a message string and its byte length.
-# Each level has a dual definition: the real emit path, and an early-
-# return stub selected when `SAKSHI_DISABLE_<LEVEL>` is defined. The
-# cyrius preprocessor (5.5.11) only evaluates `#ifdef` / `#ifndef`
-# at module scope, not inside function bodies — so the gating has to
-# sit at the fn definition level, not around the emit call.
+# When `SAKSHI_DISABLE_<LEVEL>` is defined the body's `_sk_log` call is
+# preprocessed out, leaving a bare `return 0;` stub.
 
 # Log a fatal message (always emitted regardless of runtime level)
-#ifndef SAKSHI_DISABLE_FATAL
 fn sakshi_fatal(msg, msg_len) {
+    #ifndef SAKSHI_DISABLE_FATAL
     _sk_log(SK_FATAL, msg, msg_len);
+    #endif
     return 0;
 }
-#endif
-#ifdef SAKSHI_DISABLE_FATAL
-fn sakshi_fatal(msg, msg_len) { return 0; }
-#endif
 
 # Log an error message to the configured output
-#ifndef SAKSHI_DISABLE_ERROR
 fn sakshi_error(msg, msg_len) {
+    #ifndef SAKSHI_DISABLE_ERROR
     _sk_log(SK_ERROR, msg, msg_len);
+    #endif
     return 0;
 }
-#endif
-#ifdef SAKSHI_DISABLE_ERROR
-fn sakshi_error(msg, msg_len) { return 0; }
-#endif
 
 # Log a warning message
-#ifndef SAKSHI_DISABLE_WARN
 fn sakshi_warn(msg, msg_len) {
+    #ifndef SAKSHI_DISABLE_WARN
     _sk_log(SK_WARN, msg, msg_len);
+    #endif
     return 0;
 }
-#endif
-#ifdef SAKSHI_DISABLE_WARN
-fn sakshi_warn(msg, msg_len) { return 0; }
-#endif
 
 # Log an info message
-#ifndef SAKSHI_DISABLE_INFO
 fn sakshi_info(msg, msg_len) {
+    #ifndef SAKSHI_DISABLE_INFO
     _sk_log(SK_INFO, msg, msg_len);
+    #endif
     return 0;
 }
-#endif
-#ifdef SAKSHI_DISABLE_INFO
-fn sakshi_info(msg, msg_len) { return 0; }
-#endif
 
 # Log a debug message
-#ifndef SAKSHI_DISABLE_DEBUG
 fn sakshi_debug(msg, msg_len) {
+    #ifndef SAKSHI_DISABLE_DEBUG
     _sk_log(SK_DEBUG, msg, msg_len);
+    #endif
     return 0;
 }
-#endif
-#ifdef SAKSHI_DISABLE_DEBUG
-fn sakshi_debug(msg, msg_len) { return 0; }
-#endif
 
 # Log a trace message
-#ifndef SAKSHI_DISABLE_TRACE
 fn sakshi_trace(msg, msg_len) {
+    #ifndef SAKSHI_DISABLE_TRACE
     _sk_log(SK_TRACE, msg, msg_len);
+    #endif
     return 0;
 }
-#endif
-#ifdef SAKSHI_DISABLE_TRACE
-fn sakshi_trace(msg, msg_len) { return 0; }
-#endif

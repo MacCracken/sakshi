@@ -19,6 +19,7 @@
 #           sakshi_ring_clear, sakshi_ring_event_count, sakshi_ring_decode_event,
 #           sakshi_output_udp, sakshi_output_udp_close, sakshi_ipv4,
 #           sakshi_set_emit_hook, sakshi_clear_emit_hook
+#   Clock:  sakshi_clock_recalibrate (long-running consumers, opt-in)
 #
 # Defaults: log level = INFO (3), output target = stderr. Override at runtime
 # via sakshi_set_level / sakshi_set_output before first emit.

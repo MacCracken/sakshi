@@ -1,36 +1,58 @@
 # Sakshi Development Roadmap
 
-> **v2.2.0** — cycle-counter timestamps (roadmap #5 done). `_sk_now_ns` is now `rdtsc` / `mrs cntvct_el0` + Q32 mul-shift instead of `clock_gettime`: 373 ns → 22 ns (17×). Cascading wins: `hook_emit` 398 ns → 26 ns, `trace_info` 924 ns → 578 ns. New `src/clock.cyr` module (x86_64 + aarch64); 53 tests, zero-alloc. Toolchain pinned to Cyrius 5.7.48.
+> **v2.2.1** — internal/runtime patch. `src/trace.cyr` dual-define cleanup (cyrius 5.7.48 fixes the fn-body `#ifdef` limitation v2.1.0 worked around). New `sakshi_clock_recalibrate()` for long-running consumers. 57 tests. v2.2.0 perf preserved.
 
 ---
 
 ## Completed
 
-- **v2.2.0** — roadmap #5 done. Cycle-counter timestamps: `_sk_now_ns` is now `rdtsc` (x86_64) / `mrs cntvct_el0` (aarch64) + Q32 mul-shift, no syscall on the hot path. Calibration policy: invariant TSC required on x86_64 (CPUID 0x80000007 EDX bit 8 — panic if absent). aarch64 reads `CNTFRQ_EL0` directly. Q32 scale (`mul + shrd` on x86, `mul + umulh + extr` on aarch64) — no native 128-bit math, accurate across the full u64 tick range. Lazy first-call init. Bench: `timestamp` 373 → 22 ns (17×), `hook_emit` 398 → 26 ns, `trace_info` 924 → 578 ns. 53 tests (45 + 8 new clock tests). New `src/clock.cyr` module.
-- **v2.1.1** — toolchain bump to Cyrius 5.7.48. Lint clean, 45/45 tests pass, `dist/sakshi.cyr` regenerates byte-identical. No roadmap items unblocked by the bump (the still-missing features — `#if <int-expr>`, `__MODULE__`/`__FILE__`, generics, sched-affinity wrappers — remain absent on the 5.7.x arc). Bench: `trace_info` 924 ns, `hook_emit` 398 ns, `span_cycle` 1 µs, `timestamp` 373 ns, `err_with_ctx` 8 ns, `err_unpack` 16 ns.
-- **v2.1.0** — roadmap #7 done (fnptr-backed subscriber hook) + roadmap #1 partially unlocked (discrete `SAKSHI_DISABLE_<LEVEL>` defines — workaround for the still-absent `#if <expr>`). Span perf: `sakshi_span_enter`/`_exit` were doing two `_sk_now_ns` syscalls each; refactored emit layer so callers share a single reading through `_sk_emit_span(ts, ...)`. Adds `SK_OUT_HOOK` (4) to `OutputTarget`; hook receives `(ts, level, category, msg, msg_len, elapsed_ns)` via `fncall6`.
-- **v2.0.0** — flat patra-style refactor. Removed root-level `sakshi.cyr` / `sakshi_full.cyr` bundles; single generated `dist/sakshi.cyr` + modular `src/lib.cyr`. Reorganized tests to `tests/tcyr/` + `tests/bcyr/`. Deleted dead `src/config.cyr` + `sakshi.toml` — `#ref` mechanism never resolved on 5.x, defaults now baked at declaration sites. Added `programs/smoke.cyr` (DCE build target), `scripts/bundle.sh` (bundler, CI-enforced in-sync), `fuzz/` placeholder. Scaffold modernized to match AGNOS first-party template (Ark reference): manifest migrated to `cyrius.cyml`, CI/release workflows aligned (`.cyrius-toolchain` pin, `cyrius deps`, per-file `cyrius lint` + `cyrius fmt --check`, `CYRIUS_DCE=1` build, explicit test/bench file paths). Toolchain bumped to Cyrius 5.1.13.
+- **v2.2.1** — internal patch: trace.cyr dual-define cleanup (cyrius 5.7.48 fn-body `#ifdef` works), `sakshi_clock_recalibrate()` for long-running consumers. 57 tests.
+- **v2.2.0** — cycle-counter timestamps (`src/clock.cyr`, x86_64 + aarch64). 53 tests. `timestamp` 373 → 22 ns; cascading hot-path wins.
+- **v2.1.1** — toolchain bump to Cyrius 5.7.48. No source changes; 45 tests pass, bundle byte-identical.
+- **v2.1.0** — subscriber/vtable hook (`sakshi_set_emit_hook`), per-level `SAKSHI_DISABLE_<LEVEL>` defines, span-path perf fix. `SK_OUT_HOOK = 4` enum variant.
+- **v2.0.0** — flat patra-style refactor. Single `dist/sakshi.cyr` bundle + modular `src/lib.cyr`. Manifest moved to `cyrius.cyml`; CI/release aligned with AGNOS first-party template.
 
-## Post-v2.2.0 — Future Work
+Detailed entries: [`CHANGELOG.md`](../../CHANGELOG.md).
 
-Re-audited against Cyrius 5.7.48 for v2.2.0 (2026-04-30). Roadmap #5 (cycle-counter timestamps) lands in this release. Roadmap #4 partially clears upstream — `lib/atomic.cyr` is now in stdlib; per-CPU partitioning is still blocked on `sched_getcpu` / `getcpu` syscall wrappers.
+---
 
-| # | Item | Requires | Status (5.7.48) | Unblocks when |
-|---|------|----------|-----------------|---------------|
-| 1 | Compile-time log level elimination | `#if <expr>` numeric thresholds + `-D NAME=VAL` | **Partial — shipped workaround in v2.1.0.** `cyrius.cyml` `defines`/`-D NAME` resolve `#ifdef`/`#ifndef` at module scope (not inside fn bodies — sakshi dual-defines each public fn around the guard). `#if SAKSHI_LEVEL <= 3`-style numeric comparisons are not yet in the preprocessor; grep of cyrius 5.5.11 parse.cyr finds only `PARSE_IFDEF` / `PARSE_IFNDEF` tokens. | Cyrius adds a `#if <int-expr>` evaluator. No signal in the current 5.5.x arc (Windows PE + Mach-O work dominates); not on the v6.0.0 cleanup list. **Best-effort unblock: v6.x.** |
-| 2 | Deferred formatting (string ID + raw args) | Compiler string interning | **Blocked.** No `#intern` / `#strid` / string-registry infrastructure in cyrius 5.5.11 stdlib or compiler; zero matches for interning across parse.cyr + lex.cyr. Defmt-style deferred formatting needs a compile-time string table + an ID-allocation pass. | No upstream signal. Would be a significant compiler project (needs a registry pass + symbol-per-literal + linker-time merge). **No estimate — probably not in 5.x.** |
-| 3 | Per-module log levels | Module identity (`__MODULE__`, `__FILE__`, or a stable module-id assignment) | **Blocked.** No `__MODULE__` / `__FILE__` in cyrius 5.5.11. Parser emits no file-tracking metadata. Manual workaround: consumer threads a `mod_id` constant through every call — but that's an API change we haven't scoped. | Cyrius adds either predefined `__FILE__`-style macros or a `#module NAME` directive. Not tied to any named milestone. **Best-effort: v6.x-ish.** |
-| 4 | Per-CPU ring buffers | CPU-affinity syscall wrappers + atomics | **Half-unblocked on 5.7.48.** `lib/atomic.cyr` shipped (`atomic_load/store/cas/fetch_add/fence`, x86_64 + aarch64). `sched_getcpu` / `sched_setaffinity` / `getcpu` syscall wrappers still absent in `lib/syscalls*.cyr`. A single-producer atomic ring is now writable; per-CPU partitioning still blocked. | Cyrius adds sched-affinity / `getcpu` syscall wrappers. No upstream signal on the 5.7.x arc. **No estimate.** Pragmatic interim path: ship a global atomic ring in a follow-up release without the per-CPU partitioning, accepting the cache-line-bouncing cost. |
-| 5 | rdtsc / CNTVCT_EL0 cycle-counter timestamps | Inline asm that returns a u64 + startup calibration | **Done — v2.2.0.** `src/clock.cyr` ships `_sk_now_ticks` (rdtsc / `mrs cntvct_el0`), `_sk_clock_init` (CPUID invariant-TSC check on x86, `CNTFRQ_EL0` on aarch64; panic on x86 absence), `_sk_ticks_to_ns` (Q32 `mul + shrd` / `mul + umulh + extr`), `_sk_now_ns` (lazy first-call init). `timestamp` 373 → 22 ns. | — |
-| 6 | Structured typed fields (key-value per event) | Generics, templates, or comptime layout | **Blocked.** Cyrius is monomorphic — no `struct<T>`, no templates, no `comptime`. Stdlib `hashmap.cyr` hardcodes `cstr` and `hashmap_str_keys.cyr` hardcodes `Str` because parametric types don't exist. | No cyrius plan for generics. Typed-fields work would need a non-trivial type-system extension. **No estimate — probably v6.x+ if ever.** Pragmatic alternative: build a sakshi-side schema struct that consumers populate and pass via the v2.1.0 hook. |
-| 7 | Subscriber/vtable pattern for open-ended output targets | Function pointers | **Done — v2.1.0.** `sakshi_set_emit_hook(&fn)` + `sakshi_clear_emit_hook()`. Dispatches log + span events through `fncall6` (lib/fnptr.cyr). Hook signature: `(ts, level, category, msg, msg_len, elapsed_ns)`. | — |
+## Patch lane — v2.2.x
 
-### Cyrius-side blockers tracker
+Bug fixes and refinements within the v2.2.0 public API. v2.2.1 closed the runtime/preprocessor lane; v2.2.2 closes the aarch64 portability lane.
 
-Canonical doc with the upstream features sakshi needs, current workaround status, and severity: [docs/development/issues/2026-04-30-cyrius-lang-blockers.md](../issues/2026-04-30-cyrius-lang-blockers.md). Updated each time we re-audit against a new cyrius release.
+| Item | Status | Notes |
+|------|--------|-------|
+| User-macro `#ifdef` cleanup in `src/trace.cyr` | **Done — v2.2.1** | Probe confirmed 5.7.48 evaluates user `#ifdef` inside fn bodies; dual-define removed; binary still 64 bytes smaller with `-D SAKSHI_DISABLE_TRACE -D SAKSHI_DISABLE_DEBUG`. |
+| Opt-in periodic TSC recalibration | **Done — v2.2.1** | New public `sakshi_clock_recalibrate()`. Hot path unchanged; consumers call as needed (recommended hourly for ppm accuracy on >1 h uptime). |
+| `output.cyr` aarch64 syscall-arity sweep | Planned — v2.2.2 | Pre-existing cross-build warnings on `cyrius build --aarch64`. Gate non-portable syscalls behind `#ifdef CYRIUS_ARCH_X86`; provide aarch64 equivalents where applicable. Code change before the CI lane lands. |
+| aarch64 runtime CI lane | Planned — v2.2.2 | Add qemu-aarch64 (or aarch64 runner) job to `.github/workflows/ci.yml`. Lands after the syscall sweep so the lane is green on day one. |
 
-### Cyrius-side field notes surfaced while doing the audit
+---
 
-- **Preprocessor scope** (5.5.11): `#ifdef` / `#ifndef` only evaluate at module scope — using them inside a fn body emits the gated code unconditionally. Sakshi works around by dual-defining each public `sakshi_<level>` fn at outer scope. Worth filing upstream as a limitation / bug — the failure mode is silent (no diagnostic), which cost a debug round on the v2.1.0 audit.
-- **Preprocessor scope update** (5.7.48): `#ifdef CYRIUS_ARCH_X86` / `_AARCH64` works inside fn bodies for both `asm` blocks and ordinary cyrius statements (verified during the v2.2.0 work via a probe). The user-defined-macro case (e.g., `SAKSHI_DISABLE_<LEVEL>`) was not re-tested; the dual-define workaround remains in place pending verification.
-- **Inline-asm include-boundary bug** (`cyrius/docs/development/issues/inline-asm-stores-silently-drop-when-fn-included.md`): scoped strictly to stores through caller-supplied pointers. fnptr.cyr's asm stores to `[rbp-N]` locals and works fine from included sites; rdtsc (roadmap #5) follows the same pattern and will be safe.
+## Minor lane — v2.3.0 (next minor)
+
+**Single-producer atomic ring buffer.** Interim partial unblock of roadmap #4 — Cyrius 5.7.x shipped `lib/atomic.cyr` (`atomic_load/store/cas/fetch_add/fence` on x86_64 + aarch64), so a thread-safe global ring is buildable now even though `sched_getcpu` / per-CPU partitioning is still upstream-blocked.
+
+Scope:
+- New `SK_OUT_ATOMIC_RING = 5` output target. CAS-based writer (multi-producer), single-reader.
+- Public API: `sakshi_set_output(SK_OUT_ATOMIC_RING)` + thread-safe `sakshi_ring_*` reader variants.
+- Bench target: ≤2× the current single-threaded `SK_OUT_RING` cost under no contention; document the cache-line-bouncing curve under contention.
+- Doc: explicit trade-off note vs. the future per-CPU ring (which lands when sched-affinity wrappers do).
+
+Why minor (not patch): adds a new public output target and ring-reader API surface.
+
+---
+
+## Upstream-blocked — no firm version
+
+These items need cyrius compiler/stdlib work. Each will move into a minor lane once the upstream feature lands. Detailed status, severity, and workarounds: [`docs/development/issues/2026-04-30-cyrius-lang-blockers.md`](../issues/2026-04-30-cyrius-lang-blockers.md).
+
+| # | Item | Cyrius feature needed | Best-effort estimate |
+|---|------|-----------------------|----------------------|
+| 1 | Compile-time log level elimination (full) | `#if <int-expr>` numeric thresholds | v6.x |
+| 2 | Deferred formatting (defmt-style) | String interning / `#strid` | No estimate |
+| 3 | Per-module log levels | `__FILE__` / `__MODULE__` / `#module` | v6.x |
+| 4 | Per-CPU ring buffers (full) | `sched_getcpu` / `getcpu` syscall wrappers | No estimate |
+| 6 | Structured typed fields | Generics / templates / comptime layout | No estimate (v6.x+ if ever) |
+
+Items #1 (workaround shipped in v2.1.0), #4 (atomic ring shipping in v2.3.0), and #6 (hook escape from v2.1.0) all have functional sakshi-side workarounds; full unblock is upstream's call.

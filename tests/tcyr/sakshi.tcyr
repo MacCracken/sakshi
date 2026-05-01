@@ -237,4 +237,15 @@ _sk_clock_init();
 assert_eq(_sk_tsc_freq_hz, f, "init idempotent: freq unchanged");
 assert_eq(_sk_tsc_scale, s, "init idempotent: scale unchanged");
 
+# v2.2.1: explicit recalibration. Must run a fresh measurement (no early
+# return) and produce a freq within 1% of the original — same host, same
+# TSC, expected to be near-identical.
+var rf = sakshi_clock_recalibrate();
+assert_gt(rf, 500000000, "recalibrate freq > 500 MHz");
+assert_lt(rf, 10000000000, "recalibrate freq < 10 GHz");
+var diff = rf - f;
+if (diff < 0) { diff = 0 - diff; }
+assert_lt(diff, f / 100, "recalibrate within 1% of original freq");
+assert_gt(_sk_tsc_scale, 0, "scale still set after recalibrate");
+
 var r = assert_summary();

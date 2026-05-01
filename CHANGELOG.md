@@ -5,6 +5,22 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-05-01
+
+Internal/runtime patch: dual-define cleanup in `src/trace.cyr` (cyrius 5.7.48 fixes the fn-body `#ifdef` scope limitation that v2.1.0 worked around) and a new opt-in `sakshi_clock_recalibrate()` for long-running consumers. No breaking changes; v2.2.0 API surface is a strict subset.
+
+### Added
+
+- **`sakshi_clock_recalibrate()`** — re-runs the calibration loop (one nanosleep + two `clock_gettime` syscalls, ~10 ms on x86_64; instant `mrs CNTFRQ_EL0` read on aarch64) and refreshes `_sk_tsc_freq_hz` / `_sk_tsc_scale`. Returns the new freq in Hz. Useful for processes with > ~1 hour uptime where TSC drift relative to `MONOTONIC_RAW` becomes measurable. Hot path stays syscall-free — recalibration is consumer-driven, not automatic. Single-threaded contract; callers must serialize with `_sk_now_ns` users. 4 new test assertions in `tests/tcyr/sakshi.tcyr` (recalibrate freq plausibility, ≤1% drift from initial calibration on the same host, scale still set after recalibrate). Suite size: 53 → 57 tests.
+
+### Changed
+
+- **`src/trace.cyr` simplified** — each public log fn (`sakshi_fatal` / `_error` / `_warn` / `_info` / `_debug` / `_trace`) is now a single definition with `#ifndef SAKSHI_DISABLE_<LEVEL>` guarding the `_sk_log` call inside the body. The v2.1.0 dual-define-at-module-scope pattern (one fn for enabled, one stub for disabled) is gone — cyrius 5.7.48 evaluates user-macro `#ifdef` / `#ifndef` correctly inside fn bodies, verified via probe. Source file shrinks 64 lines → 47 lines, behavior preserved (DCE-confirmed: `cyrius build -D SAKSHI_DISABLE_TRACE -D SAKSHI_DISABLE_DEBUG` produces a 64-byte-smaller binary, matching the gated-out `_sk_log` call sites).
+
+### Notes on Cyrius 5.7.48
+
+- **User-macro `#ifdef` inside fn body works** (probe in v2.2.1). The v2.1.0 audit note was correct for 5.5.11 but no longer applies on 5.7.48 — both arch macros (`CYRIUS_ARCH_X86` / `_AARCH64`) and arbitrary user-defined defines (`SAKSHI_DISABLE_TRACE` etc.) gate code correctly when the directive sits inside a fn body. The v2.2.1 trace.cyr cleanup relies on this.
+
 ## [2.2.0] - 2026-04-30
 
 Cycle-counter timestamps (roadmap #5 done). `_sk_now_ns` no longer goes through the kernel — `rdtsc` (x86_64) / `mrs cntvct_el0` (aarch64) + a calibrated Q32 mul-shift converts ticks → nanoseconds in ~22 ns. Public API surface is unchanged.

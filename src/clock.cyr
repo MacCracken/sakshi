@@ -159,6 +159,23 @@ fn _sk_now_ns() {
     return _sk_ticks_to_ns(_sk_now_ticks());
 }
 
+# Re-run the calibration loop and refresh _sk_tsc_freq_hz / _sk_tsc_scale.
+# Useful for long-running consumers (uptime > ~1 hour) where the TSC's true
+# rate has drifted relative to the kernel's MONOTONIC_RAW. Pauses the calling
+# context for ~10 ms (one nanosleep + two clock_gettime syscalls). Returns
+# the new freq in Hz.
+#
+# Single-threaded only — sakshi makes no concurrency guarantees, so callers
+# must ensure no other thread is in _sk_now_ns / span / trace during the call.
+# Recommended cadence for ppm-level accuracy: hourly from a low-priority
+# context. x86_64: panics if invariant TSC has somehow disappeared (won't on
+# real hardware). aarch64: reads CNTFRQ_EL0 (architectural; cannot drift).
+fn sakshi_clock_recalibrate() {
+    _sk_tsc_freq_hz = 0;
+    _sk_clock_init();
+    return _sk_tsc_freq_hz;
+}
+
 # Convert raw ticks to nanoseconds using the calibrated Q32 scale.
 # Result = (ticks * scale) >> 32, computed via 64×64→128 multiply + double-
 # precision right shift so the full u64 tick range is safe with no native
