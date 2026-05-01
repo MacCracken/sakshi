@@ -22,6 +22,10 @@ aarch64 portability patch: arch-dispatched syscall numbers via new `src/syscalls
 - **`.github/workflows/ci.yml` x86 lint loop** — adds `src/syscalls.cyr`.
 - **`docs/development/issues/2026-04-30-cyrius-lang-blockers.md`** — fn-body `#ifdef` entry rewritten as historical (fixed in 5.7.x). New entry on stdlib's cross-build syscall-arity warnings.
 
+### Fixed
+
+- **CI install picks up `cc5_aarch64`** — surfaced on the first push of v2.2.2 work: `error: compiler not found: /home/runner/.cyrius/bin/cc5_aarch64`. Cyrius 5.7.48 moved `cc5_aarch64` from `bin/` to the tarball top level; the existing `cp "$CYRIUS_DIR/bin/"*` install step silently dropped it. Both `ci.yml` and `release.yml` now copy the top-level `cc5_aarch64` explicitly after the `bin/*` copy. Same one-liner workaround as `yukti/.github/workflows/ci.yml`. Filed in the [blockers doc](docs/development/issues/2026-04-30-cyrius-lang-blockers.md); upstream fix is in cyrius's `install.sh` / next tarball.
+
 ### Notes on Cyrius 5.7.48
 
 - **Stdlib emits 10 `syscall arity mismatch` warnings on `cyrius build --aarch64`**, irrespective of project content (reproduced with a 7-line trivial program). Line numbers track to stdlib source, not sakshi. Treated as upstream noise; the qemu CI lane is the actual aarch64 correctness validator. See blockers doc for detail.

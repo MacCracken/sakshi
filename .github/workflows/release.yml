@@ -44,6 +44,9 @@ jobs:
           mkdir -p "$HOME/.cyrius/bin" "$HOME/.cyrius/lib"
           cp "$CYRIUS_DIR/bin/"* "$HOME/.cyrius/bin/" 2>/dev/null || true
           cp -r "$CYRIUS_DIR/lib/"* "$HOME/.cyrius/lib/" 2>/dev/null || true
+          # cc5_aarch64 ships at the tarball top level in 5.7.48+ (was bin/
+          # pre-5.7.48). Mirror the workaround used in ci.yml + yukti.
+          [ -f "$CYRIUS_DIR/cc5_aarch64" ] && cp "$CYRIUS_DIR/cc5_aarch64" "$HOME/.cyrius/bin/"
           chmod +x "$HOME/.cyrius/bin/"* 2>/dev/null || true
           echo "$HOME/.cyrius/bin" >> $GITHUB_PATH
           echo "CYRIUS_HOME=$HOME/.cyrius" >> $GITHUB_ENV

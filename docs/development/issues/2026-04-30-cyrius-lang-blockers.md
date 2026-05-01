@@ -34,6 +34,21 @@ Scope confirmed during sakshi v2.1.0 hook implementation: bug is limited to stor
 
 Sakshi-side mitigation: keep all sakshi inline asm in the local-store pattern. If a future feature genuinely needs caller-pointer stores, gate the file behind a fix-version pin and document it inline.
 
+### `cc5_aarch64` moved to tarball top-level in 5.7.48 (CI install workaround)
+
+5.7.48's `cyrius-5.7.48-x86_64-linux.tar.gz` ships `cc5_aarch64` at the **tarball top level** rather than under `bin/`. Any CI that copies `…/bin/*` to `~/.cyrius/bin/` (the pattern shipped in earlier sakshi/yukti/patra workflows) silently drops it; first aarch64 cross-build then fails with:
+
+```
+error: compiler not found: /home/runner/.cyrius/bin/cc5_aarch64
+```
+
+Sakshi-side mitigation (applied in v2.2.2 to both `ci.yml` and `release.yml`): one extra line after the `bin/*` copy —
+```
+[ -f "$CYRIUS_DIR/cc5_aarch64" ] && cp "$CYRIUS_DIR/cc5_aarch64" "$HOME/.cyrius/bin/"
+```
+
+Same workaround as `yukti/.github/workflows/ci.yml`. Yukti has the canonical upstream report at [`yukti/docs/development/issues/2026-04-30-cyrius-cc5-aarch64-packaging.md`](https://github.com/MacCracken/yukti/blob/main/docs/development/issues/2026-04-30-cyrius-cc5-aarch64-packaging.md). Upstream fix lands when `install.sh` or a future tarball moves `cc5_aarch64` back under `bin/`.
+
 ### Stdlib `--aarch64` cross-build syscall-arity warnings
 
 5.7.48 emits 10 `warning: syscall arity mismatch` lines on every `cyrius build --aarch64 …` invocation, regardless of project content. Reproduced with a 7-line file containing one `syscall(1, 2, 3, 4, 5, 6)` call: same 10 warnings at the same line numbers (372, 377, 382, 394, 399, 463, 547, 610, 617, 683 in the bundled compilation unit).
