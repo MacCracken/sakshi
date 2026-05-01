@@ -26,9 +26,10 @@ All four items shipped. v2.2.1 closed the runtime/preprocessor lane; v2.2.2 clos
 | User-macro `#ifdef` cleanup in `src/trace.cyr` | Done — v2.2.1 |
 | Opt-in periodic TSC recalibration (`sakshi_clock_recalibrate`) | Done — v2.2.1 |
 | Arch-dispatched syscalls in `src/syscalls.cyr` (+ `_sk_open` wrapper) | Done — v2.2.2 |
-| aarch64 runtime CI via qemu-user-static | Done — v2.2.2 |
+| aarch64 cross-build CI (compile + ELF verification) | Done — v2.2.2 |
+| aarch64 *runtime* CI under qemu | Held — upstream stdlib bug |
 
-Residual finding (not actionable on sakshi side): cyrius stdlib emits 10 `syscall arity mismatch` warnings on every `cyrius build --aarch64` invocation regardless of project content. Filed in the [blockers doc](issues/2026-04-30-cyrius-lang-blockers.md); upstream cleanup.
+Held item: original v2.2.2 plan was a qemu-user-static lane that ran sakshi's smoke + full test suite on aarch64 ELFs. Blocked by an upstream cyrius stdlib issue (unresolved `vec_get` / `vec_len` references; the compiler emits "will crash at runtime" warnings on x86 too but x86 paths don't reach them, aarch64 does → exit 127). Sakshi's own source is already arch-portable. Held as a follow-up patch once the stdlib fix lands — same posture as `yukti/.github/workflows/ci.yml`. Tracked in the [blockers doc](issues/2026-04-30-cyrius-lang-blockers.md).
 
 ---
 

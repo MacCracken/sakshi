@@ -49,15 +49,18 @@ Sakshi-side mitigation (applied in v2.2.2 to both `ci.yml` and `release.yml`): o
 
 Same workaround as `yukti/.github/workflows/ci.yml`. Yukti has the canonical upstream report at [`yukti/docs/development/issues/2026-04-30-cyrius-cc5-aarch64-packaging.md`](https://github.com/MacCracken/yukti/blob/main/docs/development/issues/2026-04-30-cyrius-cc5-aarch64-packaging.md). Upstream fix lands when `install.sh` or a future tarball moves `cc5_aarch64` back under `bin/`.
 
-### Stdlib `--aarch64` cross-build syscall-arity warnings
+### Stdlib `--aarch64` cross-build noise (arity + unresolved vec_get/vec_len)
 
-5.7.48 emits 10 `warning: syscall arity mismatch` lines on every `cyrius build --aarch64 …` invocation, regardless of project content. Reproduced with a 7-line file containing one `syscall(1, 2, 3, 4, 5, 6)` call: same 10 warnings at the same line numbers (372, 377, 382, 394, 399, 463, 547, 610, 617, 683 in the bundled compilation unit).
+5.7.48 emits two classes of upstream noise on every `cyrius build --aarch64 …` invocation, regardless of project content:
 
-The line numbers track to cyrius stdlib code (auto-resolved deps), not to anything sakshi controls. Conclusion: this is upstream noise on cross-build, not a sakshi bug.
+1. **10 `warning: syscall arity mismatch` lines** at fixed line numbers (372, 377, 382, 394, 399, 463, 547, 610, 617, 683) in the bundled compilation unit. Reproduced with a 7-line trivial file. Line numbers track to cyrius stdlib code, not project source. Treated as compile-time noise.
+2. **`error: undefined function 'vec_get' / 'vec_len' (will crash at runtime)`.** Same root cause — stdlib paths reference functions that aren't pulled into the bundle. On x86 these references sit in DCE-eligible code that's never reached at runtime, so the binary works. On aarch64, the codegen path actually hits them and the binary crashes (exit 127 from the test framework / qemu).
 
-Sakshi-side mitigation: the v2.2.2 `src/syscalls.cyr` arch-dispatch + `_sk_open` wrapper makes sakshi's own syscalls portable. The aarch64 CI lane (qemu) added in v2.2.2 is the actual correctness validator — if smoke + tests pass under qemu, the warnings are confirmed-noise.
+Sakshi-side mitigation: the v2.2.2 `src/syscalls.cyr` arch-dispatch + `_sk_open` wrapper makes sakshi's own syscalls portable. v2.2.2 originally added a qemu-execution lane to validate end-to-end on aarch64, but the unresolved `vec_get`/`vec_len` blocks that today. The CI lane was downgraded to **cross-build + ELF verification only** — same posture as `yukti/.github/workflows/ci.yml` (yukti has hit this and chose the same compile-only lane).
 
-Suggested cyrius-side fix: silence the arity warnings on cross-build for stdlib's own syscall sites, or ship arity metadata so the warning only fires on user code.
+Runtime aarch64 verification will reattempt as a sakshi patch once the stdlib bug is upstream-fixed. Track upstream — same fix likely closes both the arity warnings and the unresolved-vec issue, since they're both stdlib-bundling problems.
+
+Suggested cyrius-side fix: ensure stdlib auto-deps that get bundled into cross-arch builds resolve all referenced symbols (or DCE them to elimination); silence the arity warnings on stdlib-internal syscall sites.
 
 ## Cleared since last audit (5.5.11 → 5.7.48)
 
