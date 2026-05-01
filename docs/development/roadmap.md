@@ -1,11 +1,12 @@
 # Sakshi Development Roadmap
 
-> **v2.2.1** — internal/runtime patch. `src/trace.cyr` dual-define cleanup (cyrius 5.7.48 fixes the fn-body `#ifdef` limitation v2.1.0 worked around). New `sakshi_clock_recalibrate()` for long-running consumers. 57 tests. v2.2.0 perf preserved.
+> **v2.2.2** — aarch64 portability patch. New `src/syscalls.cyr` arch-dispatches syscall numbers + `_sk_open` wrapper; new qemu-user-static CI lane runs smoke + full test suite on aarch64 ELFs. Closes the v2.2.x patch lane. v2.2.0 API surface unchanged.
 
 ---
 
 ## Completed
 
+- **v2.2.2** — aarch64 portability: `src/syscalls.cyr` arch-dispatch, `_sk_open` wrapper, qemu CI lane. v2.2.x patch lane closed.
 - **v2.2.1** — internal patch: trace.cyr dual-define cleanup (cyrius 5.7.48 fn-body `#ifdef` works), `sakshi_clock_recalibrate()` for long-running consumers. 57 tests.
 - **v2.2.0** — cycle-counter timestamps (`src/clock.cyr`, x86_64 + aarch64). 53 tests. `timestamp` 373 → 22 ns; cascading hot-path wins.
 - **v2.1.1** — toolchain bump to Cyrius 5.7.48. No source changes; 45 tests pass, bundle byte-identical.
@@ -16,16 +17,18 @@ Detailed entries: [`CHANGELOG.md`](../../CHANGELOG.md).
 
 ---
 
-## Patch lane — v2.2.x
+## Patch lane — v2.2.x (closed)
 
-Bug fixes and refinements within the v2.2.0 public API. v2.2.1 closed the runtime/preprocessor lane; v2.2.2 closes the aarch64 portability lane.
+All four items shipped. v2.2.1 closed the runtime/preprocessor lane; v2.2.2 closed the aarch64 portability lane.
 
-| Item | Status | Notes |
-|------|--------|-------|
-| User-macro `#ifdef` cleanup in `src/trace.cyr` | **Done — v2.2.1** | Probe confirmed 5.7.48 evaluates user `#ifdef` inside fn bodies; dual-define removed; binary still 64 bytes smaller with `-D SAKSHI_DISABLE_TRACE -D SAKSHI_DISABLE_DEBUG`. |
-| Opt-in periodic TSC recalibration | **Done — v2.2.1** | New public `sakshi_clock_recalibrate()`. Hot path unchanged; consumers call as needed (recommended hourly for ppm accuracy on >1 h uptime). |
-| `output.cyr` aarch64 syscall-arity sweep | Planned — v2.2.2 | Pre-existing cross-build warnings on `cyrius build --aarch64`. Gate non-portable syscalls behind `#ifdef CYRIUS_ARCH_X86`; provide aarch64 equivalents where applicable. Code change before the CI lane lands. |
-| aarch64 runtime CI lane | Planned — v2.2.2 | Add qemu-aarch64 (or aarch64 runner) job to `.github/workflows/ci.yml`. Lands after the syscall sweep so the lane is green on day one. |
+| Item | Status |
+|------|--------|
+| User-macro `#ifdef` cleanup in `src/trace.cyr` | Done — v2.2.1 |
+| Opt-in periodic TSC recalibration (`sakshi_clock_recalibrate`) | Done — v2.2.1 |
+| Arch-dispatched syscalls in `src/syscalls.cyr` (+ `_sk_open` wrapper) | Done — v2.2.2 |
+| aarch64 runtime CI via qemu-user-static | Done — v2.2.2 |
+
+Residual finding (not actionable on sakshi side): cyrius stdlib emits 10 `syscall arity mismatch` warnings on every `cyrius build --aarch64` invocation regardless of project content. Filed in the [blockers doc](issues/2026-04-30-cyrius-lang-blockers.md); upstream cleanup.
 
 ---
 

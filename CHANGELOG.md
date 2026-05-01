@@ -5,6 +5,27 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-05-01
+
+aarch64 portability patch: arch-dispatched syscall numbers via new `src/syscalls.cyr`, plus a CI lane that cross-builds and runs the suite under qemu-user-static. Closes the v2.2.x patch lane. No breaking changes; v2.2.0 API surface is a strict subset (the new `_sk_open` and `_SK_SYS_*` are internal-only).
+
+### Added
+
+- **`src/syscalls.cyr`** — minimal arch-dispatched Linux syscall numbers (write, openat/open, close, nanosleep, socket, sendto, exit, clock_gettime), defined as `var` slots inside `#ifdef CYRIUS_ARCH_X86` / `_AARCH64` blocks. Avoids pulling `lib/syscalls.cyr` from cyrius stdlib (foundation-layer rule + bug-#16 enum risk for sakshi). Plus `_sk_open(path, flags, mode)` — arity-stable wrapper that calls `open` on x86_64 and `openat(AT_FDCWD, …)` on aarch64.
+- **aarch64 CI lane** — new `build-aarch64` job in `.github/workflows/ci.yml`. Sets up `qemu-user-static` via `docker/setup-qemu-action`, cross-builds smoke with `--aarch64`, verifies the ELF is `ARM aarch64`, runs smoke + the full test suite under qemu via binfmt_misc. Bench is omitted on this lane (qemu-emulated cycle counters don't reflect host timing). Validates the v2.2.0 aarch64 clock path (`mrs cntvct_el0` + `mul + umulh + extr`) end-to-end for the first time.
+
+### Changed
+
+- **`src/clock.cyr` and `src/output.cyr`** — every inline `syscall(N, …)` migrated to `_SK_SYS_*` arch-dispatched constants (or the `_sk_open` wrapper). Pre-v2.2.2 the numbers were x86_64 literals, so cross-built aarch64 binaries would have called the wrong syscall numbers (silent UB at runtime, no warning). Now the right number is selected at compile time.
+- **`tests/tcyr/sakshi.tcyr` + `tests/bcyr/sakshi.bcyr`** — same migration for the `/dev/null` open and the recalibrate test's nanosleep. Tests are now arch-portable.
+- **`scripts/bundle.sh` MODULES list** — `src/syscalls.cyr` first (other modules depend on `_SK_SYS_*`).
+- **`.github/workflows/ci.yml` x86 lint loop** — adds `src/syscalls.cyr`.
+- **`docs/development/issues/2026-04-30-cyrius-lang-blockers.md`** — fn-body `#ifdef` entry rewritten as historical (fixed in 5.7.x). New entry on stdlib's cross-build syscall-arity warnings.
+
+### Notes on Cyrius 5.7.48
+
+- **Stdlib emits 10 `syscall arity mismatch` warnings on `cyrius build --aarch64`**, irrespective of project content (reproduced with a 7-line trivial program). Line numbers track to stdlib source, not sakshi. Treated as upstream noise; the qemu CI lane is the actual aarch64 correctness validator. See blockers doc for detail.
+
 ## [2.2.1] - 2026-05-01
 
 Internal/runtime patch: dual-define cleanup in `src/trace.cyr` (cyrius 5.7.48 fixes the fn-body `#ifdef` scope limitation that v2.1.0 worked around) and a new opt-in `sakshi_clock_recalibrate()` for long-running consumers. No breaking changes; v2.2.0 API surface is a strict subset.

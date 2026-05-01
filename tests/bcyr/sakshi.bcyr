@@ -95,7 +95,7 @@ fn bench_clock_now_ticks() {
 println("=== sakshi benchmarks ===");
 
 # Redirect trace output to /dev/null for write benchmarks
-var devnull = syscall(2, "/dev/null", 1, 0);
+var devnull = _sk_open("/dev/null", 1, 0);
 if (devnull >= 0) { sakshi_set_output_fd(devnull); }
 
 var b1 = bench_new("err_new");
@@ -139,6 +139,6 @@ sakshi_clear_emit_hook();
 if (devnull >= 0) { sakshi_set_output_fd(devnull); }
 
 # Cleanup
-if (devnull >= 0) { syscall(3, devnull); }
+if (devnull >= 0) { syscall(_SK_SYS_CLOSE, devnull); }
 
 var x = 0;

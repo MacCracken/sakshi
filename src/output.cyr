@@ -24,7 +24,7 @@ var _sk_output_target = SK_OUT_STDERR;
 var _sk_stderr_fd = 2;
 
 fn _sk_write_stderr(buf, len) {
-    syscall(1, _sk_stderr_fd, buf, len);
+    syscall(_SK_SYS_WRITE, _sk_stderr_fd, buf, len);
     return 0;
 }
 
@@ -38,7 +38,7 @@ var _sk_file_fd: i64 = 0 - 1;
 # flags: O_WRONLY | O_CREAT | O_APPEND = 1 | 64 | 1024 = 1089
 # mode: 0644 = 0x1A4
 fn sakshi_output_file(path) {
-    var fd = syscall(2, path, 1089, 0x1A4);
+    var fd = _sk_open(path, 1089, 0x1A4);
     if (fd < 0) { return fd; }
     _sk_file_fd = fd;
     _sk_output_target = SK_OUT_FILE;
@@ -48,7 +48,7 @@ fn sakshi_output_file(path) {
 # Close the file output target, revert to stderr
 fn sakshi_output_file_close() {
     if (_sk_file_fd >= 0) {
-        syscall(3, _sk_file_fd);
+        syscall(_SK_SYS_CLOSE, _sk_file_fd);
         _sk_file_fd = 0 - 1;
     }
     _sk_output_target = SK_OUT_STDERR;
@@ -57,7 +57,7 @@ fn sakshi_output_file_close() {
 
 fn _sk_write_file(buf, len) {
     if (_sk_file_fd >= 0) {
-        syscall(1, _sk_file_fd, buf, len);
+        syscall(_SK_SYS_WRITE, _sk_file_fd, buf, len);
     }
     return 0;
 }
@@ -225,8 +225,8 @@ var _sk_udp_addr[16];
 # ip: 32-bit IPv4 address in network byte order
 # port: 16-bit port in host byte order
 fn sakshi_output_udp(ip, port) {
-    # socket(AF_INET=2, SOCK_DGRAM=2, 0) — syscall 41
-    var fd = syscall(41, 2, 2, 0);
+    # socket(AF_INET=2, SOCK_DGRAM=2, 0)
+    var fd = syscall(_SK_SYS_SOCKET, 2, 2, 0);
     if (fd < 0) { return fd; }
     _sk_udp_fd = fd;
 
@@ -244,7 +244,7 @@ fn sakshi_output_udp(ip, port) {
 # Close UDP socket, revert to stderr
 fn sakshi_output_udp_close() {
     if (_sk_udp_fd >= 0) {
-        syscall(3, _sk_udp_fd);
+        syscall(_SK_SYS_CLOSE, _sk_udp_fd);
         _sk_udp_fd = 0 - 1;
     }
     _sk_output_target = SK_OUT_STDERR;
@@ -269,7 +269,7 @@ fn _sk_write_udp_event(ts, level, category, msg, msg_len) {
     _sk_memcpy(&pkt + 12, msg, pkt_msg_len);
 
     var total = 12 + pkt_msg_len;
-    syscall(44, _sk_udp_fd, &pkt, total, 0, &_sk_udp_addr, 16);
+    syscall(_SK_SYS_SENDTO, _sk_udp_fd, &pkt, total, 0, &_sk_udp_addr, 16);
     return 0;
 }
 

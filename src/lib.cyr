@@ -31,8 +31,10 @@
 #     data over UDP without an application-layer security wrapper.
 #   - Monotonic timestamps overflow i64 after ~292 years of continuous uptime.
 
-# Internal helpers (clock, format, output) first — other modules depend on them.
-# clock.cyr defines _sk_now_ns; format/output/span all consume it.
+# Internal helpers (syscalls, clock, format, output) first — other modules
+# depend on them. syscalls.cyr arch-dispatches the syscall numbers used by
+# clock + output; clock.cyr defines _sk_now_ns.
+include "src/syscalls.cyr"
 include "src/clock.cyr"
 include "src/format.cyr"
 include "src/output.cyr"

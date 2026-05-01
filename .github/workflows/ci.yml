@@ -37,7 +37,7 @@ jobs:
 
       - name: Lint
         run: |
-          for f in src/clock.cyr src/format.cyr src/output.cyr src/error.cyr src/trace.cyr src/span.cyr src/lib.cyr programs/smoke.cyr dist/sakshi.cyr; do
+          for f in src/syscalls.cyr src/clock.cyr src/format.cyr src/output.cyr src/error.cyr src/trace.cyr src/span.cyr src/lib.cyr programs/smoke.cyr dist/sakshi.cyr; do
             cyrius lint "$f"
           done
 
@@ -64,6 +64,58 @@ jobs:
 
       - name: Bench
         run: cyrius bench tests/bcyr/sakshi.bcyr
+
+  build-aarch64:
+    name: Build (aarch64 / qemu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up qemu-user-static for aarch64
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Install Cyrius toolchain
+        run: |
+          CYRIUS_VERSION="${CYRIUS_VERSION:-$(cat .cyrius-toolchain | tr -d '[:space:]')}"
+          echo "Installing Cyrius $CYRIUS_VERSION"
+          curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
+          tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
+          CYRIUS_DIR="cyrius-$CYRIUS_VERSION-x86_64-linux"
+          mkdir -p "$HOME/.cyrius/bin" "$HOME/.cyrius/lib"
+          cp "$CYRIUS_DIR/bin/"* "$HOME/.cyrius/bin/" 2>/dev/null || true
+          cp -r "$CYRIUS_DIR/lib/"* "$HOME/.cyrius/lib/" 2>/dev/null || true
+          chmod +x "$HOME/.cyrius/bin/"* 2>/dev/null || true
+          echo "$HOME/.cyrius/bin" >> $GITHUB_PATH
+          echo "CYRIUS_HOME=$HOME/.cyrius" >> $GITHUB_ENV
+
+      - name: Resolve dependencies
+        run: cyrius deps
+
+      - name: Cross-build smoke (--aarch64, DCE)
+        run: |
+          mkdir -p build
+          CYRIUS_DCE=1 cyrius build --aarch64 -D SAKSHI_SMOKE programs/smoke.cyr build/sakshi-smoke-aarch64
+
+      - name: Verify binary is aarch64 ELF
+        run: |
+          file build/sakshi-smoke-aarch64
+          file build/sakshi-smoke-aarch64 | grep -q "ARM aarch64" || { echo "FAIL: not an aarch64 ELF"; exit 1; }
+
+      - name: Run smoke under qemu
+        # binfmt_misc handler from setup-qemu-action runs the aarch64 ELF
+        # transparently via qemu-user-static.
+        run: ./build/sakshi-smoke-aarch64
+
+      - name: Test (--aarch64, runs under qemu)
+        # cyrius test --aarch64 cross-compiles then executes; binfmt_misc
+        # routes the aarch64 binary through qemu.
+        run: cyrius test --aarch64 tests/tcyr/sakshi.tcyr
+
+      # Bench is omitted on the aarch64 lane: rdtsc / CNTVCT_EL0 under
+      # qemu-user emulation does not reflect host cycle counts, and the
+      # nanosleep-based calibration drift makes timing numbers unreliable.
 
   security:
     name: Security Scan

@@ -1,5 +1,5 @@
 # sakshi.cyr — tracing, error handling, and structured logging for Cyrius
-# Bundled distribution of sakshi v2.2.1
+# Bundled distribution of sakshi v2.2.2
 # Source: https://github.com/MacCracken/sakshi
 # License: GPL-3.0-only
 #
@@ -15,6 +15,59 @@
 #   - Single-threaded only. No synchronization on global state.
 #   - UDP output is unencrypted and unauthenticated.
 #   - Monotonic timestamps overflow i64 after ~292 years of uptime.
+
+# --- syscalls.cyr ---
+
+# syscalls.cyr — sakshi's minimal, arch-dispatched Linux syscall numbers.
+#
+# Sakshi cannot pull `lib/syscalls.cyr` from the cyrius stdlib because the
+# foundation-layer rule forbids external deps and that file's enum surface
+# (~60+ values per arch) is too large to inline through the bundle. Instead
+# we define just the syscalls sakshi actually uses, as plain `var` slots so
+# the project memory note about enum-heavy includes (bug #16) doesn't apply.
+#
+# Numbers: x86_64 from `arch/x86/entry/syscalls/syscall_64.tbl`;
+# aarch64 from `include/uapi/asm-generic/unistd.h`.
+#
+# v2.2.2 — closes the cross-build syscall-arity warnings reported on
+# `cyrius build --aarch64`. Pre-v2.2.2 the numbers were inlined as bare
+# integers, so the aarch64 binary called the wrong syscall (silent UB).
+
+#ifdef CYRIUS_ARCH_X86
+var _SK_SYS_WRITE         = 1;
+var _SK_SYS_OPEN          = 2;
+var _SK_SYS_CLOSE         = 3;
+var _SK_SYS_NANOSLEEP     = 35;
+var _SK_SYS_SOCKET        = 41;
+var _SK_SYS_SENDTO        = 44;
+var _SK_SYS_EXIT          = 60;
+var _SK_SYS_CLOCK_GETTIME = 228;
+#endif
+
+#ifdef CYRIUS_ARCH_AARCH64
+# aarch64 has no `open` — use `openat(AT_FDCWD, path, flags, mode)`.
+var _SK_SYS_OPENAT        = 56;
+var _SK_SYS_CLOSE         = 57;
+var _SK_SYS_WRITE         = 64;
+var _SK_SYS_EXIT          = 93;
+var _SK_SYS_NANOSLEEP     = 101;
+var _SK_SYS_CLOCK_GETTIME = 113;
+var _SK_SYS_SOCKET        = 198;
+var _SK_SYS_SENDTO        = 206;
+var _SK_AT_FDCWD          = 0 - 100;
+#endif
+
+# open(path, flags, mode) — arity-stable wrapper. x86_64 calls `open`;
+# aarch64 calls `openat(AT_FDCWD, path, flags, mode)`. Returns fd or
+# negative errno.
+fn _sk_open(path, flags, mode) {
+    #ifdef CYRIUS_ARCH_X86
+    return syscall(_SK_SYS_OPEN, path, flags, mode);
+    #endif
+    #ifdef CYRIUS_ARCH_AARCH64
+    return syscall(_SK_SYS_OPENAT, _SK_AT_FDCWD, path, flags, mode);
+    #endif
+}
 
 # --- clock.cyr ---
 
@@ -103,8 +156,8 @@ fn _sk_cpuid_invariant_tsc() {
 
 # Write to fd 2 and exit. Used for the invariant-TSC-absent panic.
 fn _sk_clock_panic(msg, len) {
-    syscall(1, 2, msg, len);
-    syscall(60, 1);
+    syscall(_SK_SYS_WRITE, 2, msg, len);
+    syscall(_SK_SYS_EXIT, 1);
     return 0;
 }
 
@@ -113,7 +166,7 @@ fn _sk_clock_panic(msg, len) {
 # anchor is in the same time base as a non-cycle-counter implementation.
 fn _sk_clock_now_ns_raw() {
     var ts[2];
-    var ret = syscall(228, 4, &ts);
+    var ret = syscall(_SK_SYS_CLOCK_GETTIME, 4, &ts);
     if (ret < 0) { return 0; }
     return load64(&ts) * 1000000000 + load64(&ts + 8);
 }
@@ -136,7 +189,7 @@ fn _sk_clock_init() {
     var sleep_ts[2];
     store64(&sleep_ts, 0);
     store64(&sleep_ts + 8, 10000000);
-    syscall(35, &sleep_ts, 0);
+    syscall(_SK_SYS_NANOSLEEP, &sleep_ts, 0);
 
     var t1_ticks = _sk_now_ticks();
     var t1_ns = _sk_clock_now_ns_raw();
@@ -434,7 +487,7 @@ var _sk_output_target = SK_OUT_STDERR;
 var _sk_stderr_fd = 2;
 
 fn _sk_write_stderr(buf, len) {
-    syscall(1, _sk_stderr_fd, buf, len);
+    syscall(_SK_SYS_WRITE, _sk_stderr_fd, buf, len);
     return 0;
 }
 
@@ -448,7 +501,7 @@ var _sk_file_fd: i64 = 0 - 1;
 # flags: O_WRONLY | O_CREAT | O_APPEND = 1 | 64 | 1024 = 1089
 # mode: 0644 = 0x1A4
 fn sakshi_output_file(path) {
-    var fd = syscall(2, path, 1089, 0x1A4);
+    var fd = _sk_open(path, 1089, 0x1A4);
     if (fd < 0) { return fd; }
     _sk_file_fd = fd;
     _sk_output_target = SK_OUT_FILE;
@@ -458,7 +511,7 @@ fn sakshi_output_file(path) {
 # Close the file output target, revert to stderr
 fn sakshi_output_file_close() {
     if (_sk_file_fd >= 0) {
-        syscall(3, _sk_file_fd);
+        syscall(_SK_SYS_CLOSE, _sk_file_fd);
         _sk_file_fd = 0 - 1;
     }
     _sk_output_target = SK_OUT_STDERR;
@@ -467,7 +520,7 @@ fn sakshi_output_file_close() {
 
 fn _sk_write_file(buf, len) {
     if (_sk_file_fd >= 0) {
-        syscall(1, _sk_file_fd, buf, len);
+        syscall(_SK_SYS_WRITE, _sk_file_fd, buf, len);
     }
     return 0;
 }
@@ -635,8 +688,8 @@ var _sk_udp_addr[16];
 # ip: 32-bit IPv4 address in network byte order
 # port: 16-bit port in host byte order
 fn sakshi_output_udp(ip, port) {
-    # socket(AF_INET=2, SOCK_DGRAM=2, 0) — syscall 41
-    var fd = syscall(41, 2, 2, 0);
+    # socket(AF_INET=2, SOCK_DGRAM=2, 0)
+    var fd = syscall(_SK_SYS_SOCKET, 2, 2, 0);
     if (fd < 0) { return fd; }
     _sk_udp_fd = fd;
 
@@ -654,7 +707,7 @@ fn sakshi_output_udp(ip, port) {
 # Close UDP socket, revert to stderr
 fn sakshi_output_udp_close() {
     if (_sk_udp_fd >= 0) {
-        syscall(3, _sk_udp_fd);
+        syscall(_SK_SYS_CLOSE, _sk_udp_fd);
         _sk_udp_fd = 0 - 1;
     }
     _sk_output_target = SK_OUT_STDERR;
@@ -679,7 +732,7 @@ fn _sk_write_udp_event(ts, level, category, msg, msg_len) {
     _sk_memcpy(&pkt + 12, msg, pkt_msg_len);
 
     var total = 12 + pkt_msg_len;
-    syscall(44, _sk_udp_fd, &pkt, total, 0, &_sk_udp_addr, 16);
+    syscall(_SK_SYS_SENDTO, _sk_udp_fd, &pkt, total, 0, &_sk_udp_addr, 16);
     return 0;
 }
 

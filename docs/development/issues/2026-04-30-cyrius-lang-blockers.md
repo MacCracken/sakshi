@@ -18,15 +18,13 @@ Re-audit and update this doc each time sakshi pins a new Cyrius release.
 
 ## Open silent-failure quirks (worth filing as bugs upstream)
 
-### `#ifdef` / `#ifndef` inside fn bodies — silently emits gated code
+### `#ifdef` / `#ifndef` inside fn bodies — fixed in 5.7.x (history retained)
 
-Behavior on 5.7.48: `#ifdef GUARD ... #endif` placed inside a function body does **not** gate the enclosed statements. They are emitted unconditionally regardless of whether `GUARD` is defined. No diagnostic.
+5.5.11 behavior: `#ifdef GUARD ... #endif` placed inside a function body did **not** gate the enclosed statements; they were emitted unconditionally with no diagnostic. Sakshi v2.1.0 worked around it by dual-defining each `sakshi_<level>` fn at module scope.
 
-Sakshi works around this by dual-defining each public `sakshi_<level>` fn at module scope around the guard, paying a small source-duplication cost.
+5.7.48 behavior: works correctly for both arch macros (`CYRIUS_ARCH_X86` / `_AARCH64`) and arbitrary user-defined macros (`SAKSHI_DISABLE_<LEVEL>` etc.). Verified via probe in v2.2.1; the dual-define workaround was removed.
 
-Cost the first time we hit it: one debug round during the v2.1.0 audit before the failure mode was identified (the lack of a diagnostic was the expensive part, not the limitation itself).
-
-Suggested cyrius-side fix: emit a diagnostic — `error: #ifdef must appear at module scope` — when the parser encounters a preprocessor conditional inside a fn body. The current behavior of silently emitting the gated code is the worst option.
+Kept in the blockers doc as historical context — anyone re-pinning a pre-5.7 toolchain needs to know.
 
 ### Inline-asm include-boundary store bug (already filed)
 
@@ -35,6 +33,16 @@ Reference: [`cyrius/docs/development/issues/inline-asm-stores-silently-drop-when
 Scope confirmed during sakshi v2.1.0 hook implementation: bug is limited to stores through caller-supplied pointers in inline asm. Stores to `[rbp-N]` / `[x29-N]` locals are unaffected. The v2.2.0 `src/clock.cyr` rdtsc / CNTVCT_EL0 implementation follows the local-store pattern (same as `lib/atomic.cyr :: atomic_cas`) and is safe.
 
 Sakshi-side mitigation: keep all sakshi inline asm in the local-store pattern. If a future feature genuinely needs caller-pointer stores, gate the file behind a fix-version pin and document it inline.
+
+### Stdlib `--aarch64` cross-build syscall-arity warnings
+
+5.7.48 emits 10 `warning: syscall arity mismatch` lines on every `cyrius build --aarch64 …` invocation, regardless of project content. Reproduced with a 7-line file containing one `syscall(1, 2, 3, 4, 5, 6)` call: same 10 warnings at the same line numbers (372, 377, 382, 394, 399, 463, 547, 610, 617, 683 in the bundled compilation unit).
+
+The line numbers track to cyrius stdlib code (auto-resolved deps), not to anything sakshi controls. Conclusion: this is upstream noise on cross-build, not a sakshi bug.
+
+Sakshi-side mitigation: the v2.2.2 `src/syscalls.cyr` arch-dispatch + `_sk_open` wrapper makes sakshi's own syscalls portable. The aarch64 CI lane (qemu) added in v2.2.2 is the actual correctness validator — if smoke + tests pass under qemu, the warnings are confirmed-noise.
+
+Suggested cyrius-side fix: silence the arity warnings on cross-build for stdlib's own syscall sites, or ship arity metadata so the warning only fires on user code.
 
 ## Cleared since last audit (5.5.11 → 5.7.48)
 

@@ -139,12 +139,12 @@ assert_eq(sakshi_span_depth(), 0, "depth back to 0");
 # Output fd redirect
 # ================================================================
 test_group("output fd redirect");
-var devnull = syscall(2, "/dev/null", 1, 0);
+var devnull = _sk_open("/dev/null", 1, 0);
 assert_gt(devnull, 0, "open /dev/null");
 sakshi_set_output_fd(devnull);
 sakshi_info("to devnull", 10);
 sakshi_set_output_fd(2);
-syscall(3, devnull);
+syscall(_SK_SYS_CLOSE, devnull);
 
 # ================================================================
 # Edge cases
@@ -224,7 +224,7 @@ var ns0 = _sk_ticks_to_ns(_sk_now_ticks());
 var nap[2];
 store64(&nap, 0);
 store64(&nap + 8, 10000000);
-syscall(35, &nap, 0);
+syscall(_SK_SYS_NANOSLEEP, &nap, 0);
 var ns1 = _sk_ticks_to_ns(_sk_now_ticks());
 var ns_delta = ns1 - ns0;
 assert_gt(ns_delta, 8000000, "ns_delta > 8 ms");

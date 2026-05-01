@@ -1,0 +1,50 @@
+# syscalls.cyr — sakshi's minimal, arch-dispatched Linux syscall numbers.
+#
+# Sakshi cannot pull `lib/syscalls.cyr` from the cyrius stdlib because the
+# foundation-layer rule forbids external deps and that file's enum surface
+# (~60+ values per arch) is too large to inline through the bundle. Instead
+# we define just the syscalls sakshi actually uses, as plain `var` slots so
+# the project memory note about enum-heavy includes (bug #16) doesn't apply.
+#
+# Numbers: x86_64 from `arch/x86/entry/syscalls/syscall_64.tbl`;
+# aarch64 from `include/uapi/asm-generic/unistd.h`.
+#
+# v2.2.2 — closes the cross-build syscall-arity warnings reported on
+# `cyrius build --aarch64`. Pre-v2.2.2 the numbers were inlined as bare
+# integers, so the aarch64 binary called the wrong syscall (silent UB).
+
+#ifdef CYRIUS_ARCH_X86
+var _SK_SYS_WRITE         = 1;
+var _SK_SYS_OPEN          = 2;
+var _SK_SYS_CLOSE         = 3;
+var _SK_SYS_NANOSLEEP     = 35;
+var _SK_SYS_SOCKET        = 41;
+var _SK_SYS_SENDTO        = 44;
+var _SK_SYS_EXIT          = 60;
+var _SK_SYS_CLOCK_GETTIME = 228;
+#endif
+
+#ifdef CYRIUS_ARCH_AARCH64
+# aarch64 has no `open` — use `openat(AT_FDCWD, path, flags, mode)`.
+var _SK_SYS_OPENAT        = 56;
+var _SK_SYS_CLOSE         = 57;
+var _SK_SYS_WRITE         = 64;
+var _SK_SYS_EXIT          = 93;
+var _SK_SYS_NANOSLEEP     = 101;
+var _SK_SYS_CLOCK_GETTIME = 113;
+var _SK_SYS_SOCKET        = 198;
+var _SK_SYS_SENDTO        = 206;
+var _SK_AT_FDCWD          = 0 - 100;
+#endif
+
+# open(path, flags, mode) — arity-stable wrapper. x86_64 calls `open`;
+# aarch64 calls `openat(AT_FDCWD, path, flags, mode)`. Returns fd or
+# negative errno.
+fn _sk_open(path, flags, mode) {
+    #ifdef CYRIUS_ARCH_X86
+    return syscall(_SK_SYS_OPEN, path, flags, mode);
+    #endif
+    #ifdef CYRIUS_ARCH_AARCH64
+    return syscall(_SK_SYS_OPENAT, _SK_AT_FDCWD, path, flags, mode);
+    #endif
+}

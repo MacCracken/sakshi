@@ -83,8 +83,8 @@ fn _sk_cpuid_invariant_tsc() {
 
 # Write to fd 2 and exit. Used for the invariant-TSC-absent panic.
 fn _sk_clock_panic(msg, len) {
-    syscall(1, 2, msg, len);
-    syscall(60, 1);
+    syscall(_SK_SYS_WRITE, 2, msg, len);
+    syscall(_SK_SYS_EXIT, 1);
     return 0;
 }
 
@@ -93,7 +93,7 @@ fn _sk_clock_panic(msg, len) {
 # anchor is in the same time base as a non-cycle-counter implementation.
 fn _sk_clock_now_ns_raw() {
     var ts[2];
-    var ret = syscall(228, 4, &ts);
+    var ret = syscall(_SK_SYS_CLOCK_GETTIME, 4, &ts);
     if (ret < 0) { return 0; }
     return load64(&ts) * 1000000000 + load64(&ts + 8);
 }
@@ -116,7 +116,7 @@ fn _sk_clock_init() {
     var sleep_ts[2];
     store64(&sleep_ts, 0);
     store64(&sleep_ts + 8, 10000000);
-    syscall(35, &sleep_ts, 0);
+    syscall(_SK_SYS_NANOSLEEP, &sleep_ts, 0);
 
     var t1_ticks = _sk_now_ticks();
     var t1_ns = _sk_clock_now_ns_raw();
