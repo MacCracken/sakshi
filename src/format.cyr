@@ -29,25 +29,6 @@ fn _sk_memset(dst, val, n) {
 }
 
 # ================================================================
-# Timestamp
-# ================================================================
-
-# clock_gettime constants (x86_64 Linux)
-enum _SkSyscall {
-    _SK_SYS_CLOCK_GETTIME = 228;
-    _SK_CLOCK_MONOTONIC_RAW = 4;
-}
-
-# Get monotonic nanoseconds. Returns 0 on failure.
-# Overflow after ~292 years of uptime (i64 limit).
-fn _sk_now_ns() {
-    var ts[2];
-    var ret = syscall(_SK_SYS_CLOCK_GETTIME, _SK_CLOCK_MONOTONIC_RAW, &ts);
-    if (ret < 0) { return 0; }
-    return load64(&ts) * 1000000000 + load64(&ts + 8);
-}
-
-# ================================================================
 # Integer formatting
 # ================================================================
 

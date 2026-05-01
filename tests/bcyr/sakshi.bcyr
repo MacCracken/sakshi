@@ -74,11 +74,17 @@ fn bench_hook_emit() {
 }
 
 # ================================================================
-# Timestamp — clock_gettime overhead
+# Timestamp — cycle-counter read + Q32 mul-shift since v2.2.0
+# (was clock_gettime + vDSO at ~373 ns on 5.7.48 / v2.1.1)
 # ================================================================
 
 fn bench_timestamp() {
     var t = _sk_now_ns();
+    return 0;
+}
+
+fn bench_clock_now_ticks() {
+    var t = _sk_now_ticks();
     return 0;
 }
 
@@ -107,6 +113,10 @@ bench_report(b3);
 var b4 = bench_new("timestamp");
 bench_run_batch(b4, &bench_timestamp, 10000, 100);
 bench_report(b4);
+
+var b4t = bench_new("clock_now_ticks");
+bench_run_batch(b4t, &bench_clock_now_ticks, 10000, 100);
+bench_report(b4t);
 
 var b5 = bench_new("trace_info");
 bench_run_batch(b5, &bench_trace_info, 10000, 100);

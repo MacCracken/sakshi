@@ -5,6 +5,33 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-04-30
+
+Cycle-counter timestamps (roadmap #5 done). `_sk_now_ns` no longer goes through the kernel — `rdtsc` (x86_64) / `mrs cntvct_el0` (aarch64) + a calibrated Q32 mul-shift converts ticks → nanoseconds in ~22 ns. Public API surface is unchanged.
+
+### Added
+
+- **`src/clock.cyr`** — new internal module owning cycle-counter timestamps. Public-internal API: `_sk_now_ticks()`, `_sk_clock_init()`, `_sk_ticks_to_ns(ticks)`, `_sk_now_ns()`. Lazy first-call init: `_sk_now_ns` triggers `_sk_clock_init` on first call (CPUID feature check + 10 ms calibration on x86_64; CNTFRQ_EL0 read on aarch64). Subsequent calls are pure inline asm + arithmetic, no syscalls.
+- **`tests/tcyr/sakshi.tcyr` clock test group** — 8 new assertions: TSC freq plausibility (500 MHz < freq < 10 GHz), Q32 scale populated, monotonicity over 1000 raw `_sk_now_ticks()` reads, ticks → ns scale agrees with `nanosleep(10 ms)` to within ±2 ms, init idempotency. Suite size: 45 → 53 tests.
+- **`tests/bcyr/sakshi.bcyr :: clock_now_ticks` bench** — raw rdtsc cost.
+
+### Changed
+
+- **`_sk_now_ns()` perf: 373 ns → 22 ns** on x86_64 Linux (5.7.48). Cascading wins on the hot path: `hook_emit` 398 ns → 26 ns (15× faster, dominated by the now-cheap timestamp), `trace_info` 924 ns → 578 ns (saves the full 346 ns of timestamp cost). `span_cycle` reports 1 µs which is the bench reporting-resolution floor — actual is sub-µs. `err_*` benches unchanged (no timestamp dependency).
+- **Tick origin shift (visible-but-non-breaking).** v2.2.0 timestamps count from the host's TSC origin (boot or vendor-defined); v2.1.x counted from `CLOCK_MONOTONIC_RAW` epoch. Magnitudes differ; monotonicity, ns scaling, and event ordering are preserved. Span elapsed (`t_exit - t_enter`) is unaffected because both endpoints share the new origin. Consumers comparing absolute timestamps across a 2.1 → 2.2 boundary will see a one-time jump.
+- **`_sk_now_ns` migrated** from `src/format.cyr` to `src/clock.cyr`. `src/lib.cyr` includes `clock.cyr` first (other modules depend on it). `scripts/bundle.sh` `MODULES` list updated; `dist/sakshi.cyr` regenerates clean.
+- **`.github/workflows/ci.yml`** — lint loop adds `src/clock.cyr`.
+- **`docs/development/roadmap.md`** — roadmap #5 moved to Completed (v2.2.0). Roadmap #4 status revised: half-unblocked on 5.7.48 (atomics shipped via `lib/atomic.cyr`); per-CPU partitioning still blocked on `sched_getcpu` / `getcpu` syscall wrappers. Audit-point header updated to 5.7.48.
+
+### Fixed
+
+- **`scripts/version-bump.sh`** — `sed`'s `/PATTERN/i` was inserting the new "## [VERSION] - Unreleased" stub before **every** existing `## [` heading instead of just the first, multiplying duplicates on each call. Two prior bumps (2.1.0 → 2.1.1, 2.1.1 → 2.2.0) left 35 orphan stubs in `CHANGELOG.md`. Now uses a one-shot insertion before the first heading and strips any pre-existing duplicate stubs as a sweep.
+
+### Notes on Cyrius 5.7.48
+
+- **`#ifdef CYRIUS_ARCH_X86` / `_AARCH64` works inside fn bodies** for both `asm` blocks and ordinary cyrius statements (verified on 5.7.48 with a test probe). The v2.1.0 audit note about fn-body `#ifdef` being silently no-op'd applied to user-defined macros (`SAKSHI_DISABLE_<LEVEL>`); arch macros gate correctly. The user-macro case has not been re-verified in v2.2.0 — `SAKSHI_DISABLE_<LEVEL>` still uses the dual-define workaround.
+- **Inline-asm local-store pattern is safe across includes.** `src/clock.cyr` follows the same `[rbp-N]` / `[x29-N]` store pattern used in `lib/atomic.cyr` and `lib/fnptr.cyr`. The known cyrius include-boundary store bug only affects writes through caller-supplied pointers and does not apply here.
+
 ## [2.1.1] - 2026-04-30
 
 Toolchain bump only. No source changes. 2.1.0 API surface unchanged.
@@ -12,6 +39,7 @@ Toolchain bump only. No source changes. 2.1.0 API surface unchanged.
 ### Changed
 
 - **Toolchain bumped to Cyrius 5.7.48** (from 5.5.11). `.cyrius-toolchain` and `cyrius.cyml` updated. Lint clean, all 45 tests pass, `dist/sakshi.cyr` regenerates byte-identical from `src/`. Bench numbers improve broadly on the 5.7.x compiler — `trace_info` 924 ns, `hook_emit` 398 ns, `span_cycle` 1 µs, `timestamp` 373 ns, `err_with_ctx` 8 ns, `err_unpack` 16 ns. The roadmap notes about `#if <int-expr>`, `__MODULE__`/`__FILE__`, and the in-fn-body `#ifdef` scope limitation remain unchanged on 5.7.48; no item moves from blocked to unblocked with this bump.
+
 
 ## [2.1.0] - 2026-04-20
 
@@ -46,7 +74,8 @@ Toolchain bump, subscriber-hook API (roadmap #7 done), compile-time level disabl
 - **Preprocessor scope**: `#ifdef` / `#ifndef` are only evaluated at module scope in 5.5.11 — a guard placed inside a fn body does nothing. The `SAKSHI_DISABLE_<LEVEL>` pattern therefore dual-defines each public `sakshi_<level>` at outer scope. Worth filing upstream; failure mode is silent (no diagnostic).
 - **Inline-asm include-boundary bug** ([cyrius/docs/development/issues/inline-asm-stores-silently-drop-when-fn-included.md](https://github.com/MacCracken/cyrius)): scoped to stores through caller-supplied pointers. fnptr.cyr (used by the hook) stores only to `[rbp-N]` locals and is safe. rdtsc-based timestamps (roadmap #5) follow the same pattern and are now mechanically unblocked; landing deferred to 2.2.0 / 2.3.0 pending a calibration policy.
 
-## [2.1.1] - Unreleased
+
+
 
 ## [2.0.0] - 2026-04-16
 
@@ -86,7 +115,8 @@ Flat patra-style refactor. **Breaking** — the hand-maintained `sakshi.cyr` (sl
 
 - The Cyrius 5.1.12 and 5.1.13 release tarballs' `cyrius` binary internally self-reports as `cyrius 5.1.10` when invoked with `cyrius version`. The tarball contents are correct; the stale version string is an upstream release-script bug in the Cyrius toolchain, not sakshi. Pinning by tarball name (`.cyrius-toolchain = 5.1.13`) still resolves the right artifact.
 
-## [2.1.1] - Unreleased
+
+
 
 ## [1.0.0] - 2026-04-16
 
@@ -107,7 +137,8 @@ Flat patra-style refactor. **Breaking** — the hand-maintained `sakshi.cyr` (sl
 - Security audited (11 findings, all resolved)
 - Zero heap allocation, zero external dependencies
 
-## [2.1.1] - Unreleased
+
+
 
 ## [0.9.3] - 2026-04-15
 
@@ -129,7 +160,8 @@ Flat patra-style refactor. **Breaking** — the hand-maintained `sakshi.cyr` (sl
 - **Performance: ring buffer header write** — replaced 12 individual `_sk_ring_put` function calls with stack-build + byte-copy loop. Eliminates function call overhead for header construction. (`src/output.cyr`, `sakshi_full.cyr`)
 - **Performance: `_sk_memcpy` 8-byte bulk copy** — uses `store64`/`load64` for aligned 8-byte chunks, byte loop for remainder. ~8x faster for larger payloads. (`src/format.cyr`, `sakshi_full.cyr`)
 
-## [2.1.1] - Unreleased
+
+
 
 ## [0.9.2] - 2026-04-15
 
@@ -152,7 +184,8 @@ Flat patra-style refactor. **Breaking** — the hand-maintained `sakshi.cyr` (sl
 
 - All 7 deferred items from 2026-04-15 security audit resolved
 
-## [2.1.1] - Unreleased
+
+
 
 ## [0.9.1] - 2026-04-15
 
@@ -177,7 +210,8 @@ Flat patra-style refactor. **Breaking** — the hand-maintained `sakshi.cyr` (sl
 - **Roadmap** — added v0.9.1 security follow-up milestone (7 deferred items), updated v1.0.0 prerequisites
 - **Architecture docs** — fixed stale references: "serial" → "stderr", removed phantom `[module]` trace field, corrected `sakshi_error` → `sakshi_err_new`
 
-## [2.1.1] - Unreleased
+
+
 
 ## [0.9.0] - 2026-04-09
 
@@ -187,22 +221,24 @@ Flat patra-style refactor. **Breaking** — the hand-maintained `sakshi.cyr` (sl
 - **Slim profile refactored** — `sakshi.cyr` now uses `_sk_level_str` helper and `_sk_fmt_line` formatter, matching full profile structure
 - **`defer` pattern documented** — `span.cyr` documents recommended `defer { sakshi_span_exit(); }` usage for guaranteed span cleanup (Cyrius >= 3.2.0)
 
-## [2.1.1] - Unreleased
+
+
 
 ## [0.8.2] - 2026-04-09
 
 ### Changed
 - Cyrius toolchain pinned to v3.2.5 (cc3 compiler, minimum version)
 
-## [2.1.1] - Unreleased
 
-## [0.8.1] - Unreleased
+
+
 
 ### Fixed
 
 - Formatting fixes to distribution lib files
 
-## [2.1.1] - Unreleased
+
+
 
 ## [0.8.0]
 
@@ -213,7 +249,8 @@ Flat patra-style refactor. **Breaking** — the hand-maintained `sakshi.cyr` (sl
 - **`match` for level dispatch** — replaced `if` chains with `match` expressions in both distribution profiles and modular source
 - **`_sk_level_str` helper** — centralized level-to-string mapping (full profile + modular src) using `match`, covers log levels + span actions
 
-## [2.1.1] - Unreleased
+
+
 
 ## [0.7.0]
 
@@ -228,7 +265,8 @@ Flat patra-style refactor. **Breaking** — the hand-maintained `sakshi.cyr` (sl
 - Cyrius bug #16 resolved in Cyrius 2.2.0 — enums no longer shift data section layout; full profile works without var workaround
 - CI pinned to Cyrius 2.2.0
 
-## [2.1.1] - Unreleased
+
+
 
 ## [0.5.0]
 

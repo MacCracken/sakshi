@@ -14,8 +14,9 @@ VERSION=$(cat "$ROOT/VERSION" | tr -d '[:space:]')
 mkdir -p "$ROOT/dist"
 
 # Concatenation order must match src/lib.cyr include order:
-# format (primitives) → output (uses format) → error → trace → span
-MODULES="src/format.cyr src/output.cyr src/error.cyr src/trace.cyr src/span.cyr"
+# clock (cycle counter) → format (primitives) → output (uses format)
+# → error → trace → span
+MODULES="src/clock.cyr src/format.cyr src/output.cyr src/error.cyr src/trace.cyr src/span.cyr"
 
 {
 echo "# sakshi.cyr — tracing, error handling, and structured logging for Cyrius"

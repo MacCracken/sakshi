@@ -1,7 +1,7 @@
 # output.cyr — output targets for sakshi
 # Supports: stderr (default), file, ring buffer (binary), UDP (binary), hook.
 # Target selection via sakshi_set_output / sakshi_set_emit_hook at runtime.
-# Depends: format.cyr (for _sk_memcpy, _sk_now_ns, _sk_bin_write_hdr),
+# Depends: clock.cyr (for _sk_now_ns), format.cyr (for _sk_memcpy, _sk_bin_write_hdr),
 #          lib/fnptr.cyr (for subscriber hook dispatch — fncall6)
 
 include "lib/fnptr.cyr"

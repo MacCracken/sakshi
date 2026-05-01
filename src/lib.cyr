@@ -30,7 +30,9 @@
 #     data over UDP without an application-layer security wrapper.
 #   - Monotonic timestamps overflow i64 after ~292 years of continuous uptime.
 
-# Internal helpers (format, output) first — other modules depend on them
+# Internal helpers (clock, format, output) first — other modules depend on them.
+# clock.cyr defines _sk_now_ns; format/output/span all consume it.
+include "src/clock.cyr"
 include "src/format.cyr"
 include "src/output.cyr"
 

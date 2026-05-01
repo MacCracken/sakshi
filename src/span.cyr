@@ -1,8 +1,8 @@
 # span.cyr — enter/exit function tracking with timing
-# Uses _sk_now_ns() from format.cyr for nanosecond precision.
+# Uses _sk_now_ns() from clock.cyr for nanosecond precision (cycle-counter backed since v2.2.0).
 # Routes through _sk_emit_span: binary for buffer/UDP, text for stderr/file.
 # Fixed-depth span stack — no heap allocation.
-# Depends: format.cyr, output.cyr, trace.cyr (included via lib.cyr)
+# Depends: clock.cyr, format.cyr, output.cyr, trace.cyr (included via lib.cyr)
 #
 # Recommended usage with defer (Cyrius >= 3.2.0):
 #   fn my_function() {

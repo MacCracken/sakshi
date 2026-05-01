@@ -198,4 +198,43 @@ sakshi_set_output_fd(2);
 sakshi_info("post-clear", 10);
 assert_eq(hk_count, 3, "hook not fired after clear");
 
+# ================================================================
+# Cycle-counter clock (v2.2.0)
+# ================================================================
+test_group("clock: cycle counter");
+
+# _sk_clock_init runs lazily on first _sk_now_ns; the trace/span calls above
+# have already triggered it. Both freq + scale must be populated.
+assert_gt(_sk_tsc_freq_hz, 500000000, "freq > 500 MHz");
+assert_lt(_sk_tsc_freq_hz, 10000000000, "freq < 10 GHz");
+assert_gt(_sk_tsc_scale, 0, "Q32 scale set");
+
+# Tick reads must be monotonic across a tight loop.
+var prev_ticks = _sk_now_ticks();
+var mono_ok = 1;
+for (var i = 0; i < 1000; i = i + 1) {
+    var cur_ticks = _sk_now_ticks();
+    if (cur_ticks < prev_ticks) { mono_ok = 0; }
+    prev_ticks = cur_ticks;
+}
+assert_eq(mono_ok, 1, "ticks monotonic over 1000 reads");
+
+# ticks→ns scale agrees with the kernel: nanosleep(10 ms) → ns delta in [8, 12] ms.
+var ns0 = _sk_ticks_to_ns(_sk_now_ticks());
+var nap[2];
+store64(&nap, 0);
+store64(&nap + 8, 10000000);
+syscall(35, &nap, 0);
+var ns1 = _sk_ticks_to_ns(_sk_now_ticks());
+var ns_delta = ns1 - ns0;
+assert_gt(ns_delta, 8000000, "ns_delta > 8 ms");
+assert_lt(ns_delta, 12000000, "ns_delta < 12 ms");
+
+# Init is idempotent — second call must not change cached state.
+var f = _sk_tsc_freq_hz;
+var s = _sk_tsc_scale;
+_sk_clock_init();
+assert_eq(_sk_tsc_freq_hz, f, "init idempotent: freq unchanged");
+assert_eq(_sk_tsc_scale, s, "init idempotent: scale unchanged");
+
 var r = assert_summary();

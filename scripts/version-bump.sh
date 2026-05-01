@@ -10,9 +10,20 @@ echo "$NEW_VERSION" > VERSION
 # cyrius.cyml
 sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" cyrius.cyml
 
-# CHANGELOG.md — add section header if missing
+# CHANGELOG.md — add section header if missing.
+# `sed -i "/PATTERN/i ..."` inserts before EVERY matching line, not just the
+# first, so we use awk to insert exactly once before the first ^## [ heading.
+# Also strips any pre-existing "## [X] - Unreleased" stubs (left over from the
+# pre-v2.2.0 version of this script — see CHANGELOG v2.2.0 Fixed).
 if ! grep -q "## \[$NEW_VERSION\]" CHANGELOG.md; then
-  sed -i "/^## \[/i ## [$NEW_VERSION] - Unreleased\n" CHANGELOG.md
+  awk -v ver="$NEW_VERSION" '
+    !inserted && /^## \[/ {
+      print "## [" ver "] - Unreleased"
+      print ""
+      inserted = 1
+    }
+    !/^## \[.*\] - Unreleased$/ { print }
+  ' CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 fi
 
 echo "Bumped to $NEW_VERSION"
