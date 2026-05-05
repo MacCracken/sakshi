@@ -5,6 +5,8 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] - Unreleased
+
 ## [2.2.2] - 2026-05-01
 
 aarch64 portability patch: arch-dispatched syscall numbers via new `src/syscalls.cyr`, plus a CI lane that cross-builds and runs the suite under qemu-user-static. Closes the v2.2.x patch lane. No breaking changes; v2.2.0 API surface is a strict subset (the new `_sk_open` and `_SK_SYS_*` are internal-only).
