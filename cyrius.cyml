@@ -1,11 +1,11 @@
 [package]
 name = "sakshi"
-version = "2.2.3"
+version = "${file:VERSION}"
 description = "Sakshi — the silent witness. Tracing, error handling, and structured logging for Cyrius."
 license = "GPL-3.0-only"
 repository = "https://github.com/MacCracken/sakshi"
 language = "cyrius"
-cyrius = "5.8.64"
+cyrius = "5.11.4"
 
 [build]
 entry = "programs/smoke.cyr"

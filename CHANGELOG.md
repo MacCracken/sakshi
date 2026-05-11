@@ -5,7 +5,38 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.2.3] - Unreleased
+## [2.2.4] - 2026-05-11
+
+### Changed
+
+- **Stdlib annotation pass**: every public fn in `src/*.cyr`
+  carries a `: i64` return-type annotation. Mechanical pass
+  matching cyrius's v5.11.x annotation arc; parse-only, zero
+  runtime / codegen change.
+- `cyrius` pin bumped 5.8.64 → 5.11.4 — required for `: i64`
+  return-type syntax (v5.10.x REAL TYPE SYSTEM).
+- `dist/sakshi.cyr` regenerated via `scripts/bundle.sh` at
+  v2.2.4 (1133 lines). Ready for next cyrius-side fold-in slot.
+
+### Verified
+
+- `cyrius build programs/smoke.cyr build/sakshi-smoke`: green.
+
+## [2.2.3] - 2026-05-05
+
+### Changed
+
+- `cyrius` pin bumped 5.7.48 → 5.8.64 ahead of the cyrius v5.8.65
+  stdlib foldin. Sakshi is on the foldin manifest; this patch is
+  the prerequisite for cyrius's `[deps].sakshi.tag` to point at
+  2.2.3 in the foldin slot.
+- No source changes — pure pin + version bump. `dist/sakshi.cyr`
+  rebuilt at 1133 lines.
+
+### Verified
+
+- `cyrius test`: **57 / 57** asserts pass against cyrius 5.8.64.
+- `cyrius fmt --check`: clean.
 
 ## [2.2.2] - 2026-05-01
 

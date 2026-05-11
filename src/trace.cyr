@@ -35,18 +35,18 @@ enum SpanAction {
 var _sk_log_level = SK_INFO;
 
 # Set the active log level
-fn sakshi_set_level(level) {
+fn sakshi_set_level(level): i64 {
     _sk_log_level = level;
     return 0;
 }
 
 # Get the active log level
-fn sakshi_get_level() {
+fn sakshi_get_level(): i64 {
     return _sk_log_level;
 }
 
 # Internal: emit a log event if level is enabled
-fn _sk_log(level, msg, msg_len) {
+fn _sk_log(level, msg, msg_len): i64 {
     if (level > _sk_log_level) { return 0; }
     _sk_emit(level, 0, msg, msg_len);
     return 0;
@@ -57,7 +57,7 @@ fn _sk_log(level, msg, msg_len) {
 # preprocessed out, leaving a bare `return 0;` stub.
 
 # Log a fatal message (always emitted regardless of runtime level)
-fn sakshi_fatal(msg, msg_len) {
+fn sakshi_fatal(msg, msg_len): i64 {
     #ifndef SAKSHI_DISABLE_FATAL
     _sk_log(SK_FATAL, msg, msg_len);
     #endif
@@ -65,7 +65,7 @@ fn sakshi_fatal(msg, msg_len) {
 }
 
 # Log an error message to the configured output
-fn sakshi_error(msg, msg_len) {
+fn sakshi_error(msg, msg_len): i64 {
     #ifndef SAKSHI_DISABLE_ERROR
     _sk_log(SK_ERROR, msg, msg_len);
     #endif
@@ -73,7 +73,7 @@ fn sakshi_error(msg, msg_len) {
 }
 
 # Log a warning message
-fn sakshi_warn(msg, msg_len) {
+fn sakshi_warn(msg, msg_len): i64 {
     #ifndef SAKSHI_DISABLE_WARN
     _sk_log(SK_WARN, msg, msg_len);
     #endif
@@ -81,7 +81,7 @@ fn sakshi_warn(msg, msg_len) {
 }
 
 # Log an info message
-fn sakshi_info(msg, msg_len) {
+fn sakshi_info(msg, msg_len): i64 {
     #ifndef SAKSHI_DISABLE_INFO
     _sk_log(SK_INFO, msg, msg_len);
     #endif
@@ -89,7 +89,7 @@ fn sakshi_info(msg, msg_len) {
 }
 
 # Log a debug message
-fn sakshi_debug(msg, msg_len) {
+fn sakshi_debug(msg, msg_len): i64 {
     #ifndef SAKSHI_DISABLE_DEBUG
     _sk_log(SK_DEBUG, msg, msg_len);
     #endif
@@ -97,7 +97,7 @@ fn sakshi_debug(msg, msg_len) {
 }
 
 # Log a trace message
-fn sakshi_trace(msg, msg_len) {
+fn sakshi_trace(msg, msg_len): i64 {
     #ifndef SAKSHI_DISABLE_TRACE
     _sk_log(SK_TRACE, msg, msg_len);
     #endif

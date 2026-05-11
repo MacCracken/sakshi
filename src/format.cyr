@@ -7,7 +7,7 @@
 # ================================================================
 
 # Copy n bytes from src to dst (8-byte bulk + byte remainder)
-fn _sk_memcpy(dst, src, n) {
+fn _sk_memcpy(dst, src, n): i64 {
     var i: i64 = 0;
     while (i + 8 <= n) {
         store64(dst + i, load64(src + i));
@@ -21,7 +21,7 @@ fn _sk_memcpy(dst, src, n) {
 }
 
 # Fill n bytes at dst with val
-fn _sk_memset(dst, val, n) {
+fn _sk_memset(dst, val, n): i64 {
     for (var i = 0; i < n; i = i + 1) {
         store8(dst + i, val);
     }
@@ -34,7 +34,7 @@ fn _sk_memset(dst, val, n) {
 
 # Convert integer to decimal string in buffer, return length written.
 # Buffer must be at least 24 bytes.
-fn _sk_fmt_int(n, buf) {
+fn _sk_fmt_int(n, buf): i64 {
     var bi = 23;
     var neg: i64 = 0;
     if (n < 0) { neg = 1; n = 0 - n; }
@@ -53,7 +53,7 @@ fn _sk_fmt_int(n, buf) {
 # ================================================================
 # Internal: write an integer into buf at pos, respecting cap. Returns new pos.
 # ================================================================
-fn _sk_write_int(buf, pos, cap, val) {
+fn _sk_write_int(buf, pos, cap, val): i64 {
     var tmp[24];
     var tlen = _sk_fmt_int(val, &tmp);
     var ti = 0;
@@ -66,7 +66,7 @@ fn _sk_write_int(buf, pos, cap, val) {
 }
 
 # Internal: write a string into buf at pos, respecting cap. Returns new pos.
-fn _sk_write_str(buf, pos, cap, s, slen) {
+fn _sk_write_str(buf, pos, cap, s, slen): i64 {
     var wi = 0;
     while (wi < slen && pos < cap) {
         store8(buf + pos, load8(s + wi));
@@ -82,7 +82,7 @@ fn _sk_write_str(buf, pos, cap, s, slen) {
 
 # Format a trace line: "[timestamp] [LEVEL] msg\n"
 # Returns bytes written. Caller provides timestamp.
-fn _sk_fmt_line(buf, cap, ts, level_str, level_len, msg, msg_len) {
+fn _sk_fmt_line(buf, cap, ts, level_str, level_len, msg, msg_len): i64 {
     var pos: i64 = 0;
 
     # [timestamp]
@@ -108,7 +108,7 @@ fn _sk_fmt_line(buf, cap, ts, level_str, level_len, msg, msg_len) {
 
 # Format a span line: "[timestamp] [ACTION] name (elapsed ns)\n"
 # Returns bytes written. Caller provides timestamp.
-fn _sk_fmt_span(buf, cap, ts, action, action_len, name, name_len, elapsed_ns) {
+fn _sk_fmt_span(buf, cap, ts, action, action_len, name, name_len, elapsed_ns): i64 {
     var pos: i64 = 0;
 
     # [timestamp]
@@ -159,7 +159,7 @@ enum _SkBinConst {
 }
 
 # Write a binary event header into buf. Returns header size (12).
-fn _sk_bin_write_hdr(buf, timestamp, level, category, msg_len) {
+fn _sk_bin_write_hdr(buf, timestamp, level, category, msg_len): i64 {
     store64(buf, timestamp);
     store8(buf + 8, level);
     store8(buf + 9, category);
@@ -169,7 +169,7 @@ fn _sk_bin_write_hdr(buf, timestamp, level, category, msg_len) {
 
 # Read a binary event header from buf. Returns fields via out pointers.
 # out_ts, out_level, out_cat, out_msg_len are pointers to i64.
-fn _sk_bin_read_hdr(buf, out_ts, out_level, out_cat, out_msg_len) {
+fn _sk_bin_read_hdr(buf, out_ts, out_level, out_cat, out_msg_len): i64 {
     store64(out_ts, load64(buf));
     store64(out_level, load8(buf + 8));
     store64(out_cat, load8(buf + 9));

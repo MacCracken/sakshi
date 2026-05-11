@@ -23,7 +23,7 @@ var _sk_tsc_freq_hz: i64 = 0;
 var _sk_tsc_scale: i64 = 0;
 
 # Read the cycle counter. Returns raw ticks; convert with _sk_ticks_to_ns.
-fn _sk_now_ticks() {
+fn _sk_now_ticks(): i64 {
     var ticks: i64 = 0;
     #ifdef CYRIUS_ARCH_X86
     asm {
@@ -48,7 +48,7 @@ fn _sk_now_ticks() {
 
 # aarch64 only: read CNTFRQ_EL0 (timer frequency in Hz). Architectural —
 # no calibration required.
-fn _sk_aarch64_cntfrq() {
+fn _sk_aarch64_cntfrq(): i64 {
     var freq: i64 = 0;
     #ifdef CYRIUS_ARCH_AARCH64
     asm {
@@ -61,7 +61,7 @@ fn _sk_aarch64_cntfrq() {
 }
 
 # CPUID(0x80000007) EDX bit 8 — invariant TSC. Returns 1 if supported, 0 if not.
-fn _sk_cpuid_invariant_tsc() {
+fn _sk_cpuid_invariant_tsc(): i64 {
     var result: i64 = 0;
     #ifdef CYRIUS_ARCH_X86
     asm {
@@ -82,7 +82,7 @@ fn _sk_cpuid_invariant_tsc() {
 }
 
 # Write to fd 2 and exit. Used for the invariant-TSC-absent panic.
-fn _sk_clock_panic(msg, len) {
+fn _sk_clock_panic(msg, len): i64 {
     syscall(_SK_SYS_WRITE, 2, msg, len);
     syscall(_SK_SYS_EXIT, 1);
     return 0;
@@ -91,7 +91,7 @@ fn _sk_clock_panic(msg, len) {
 # clock_gettime(MONOTONIC_RAW) wrapper used only at calibration time.
 # Inlines the same syscall the v2.1.x _sk_now_ns used so the calibration
 # anchor is in the same time base as a non-cycle-counter implementation.
-fn _sk_clock_now_ns_raw() {
+fn _sk_clock_now_ns_raw(): i64 {
     var ts[2];
     var ret = syscall(_SK_SYS_CLOCK_GETTIME, 4, &ts);
     if (ret < 0) { return 0; }
@@ -101,7 +101,7 @@ fn _sk_clock_now_ns_raw() {
 # One-shot init: panic if invariant TSC is absent, then calibrate freq with
 # a 10 ms nanosleep window. Stores _sk_tsc_freq_hz (and, in step 3, _sk_tsc_scale).
 # Idempotent — early-returns if already initialized.
-fn _sk_clock_init() {
+fn _sk_clock_init(): i64 {
     if (_sk_tsc_freq_hz > 0) { return 0; }
 
     #ifdef CYRIUS_ARCH_X86
@@ -152,7 +152,7 @@ fn _sk_clock_init() {
 # no syscall. Magnitude differs from v2.1.x (TSC origin vs MONOTONIC_RAW
 # origin), but monotonicity and ns scaling are preserved — span elapsed
 # computation and event ordering are unaffected.
-fn _sk_now_ns() {
+fn _sk_now_ns(): i64 {
     if (_sk_tsc_scale == 0) {
         _sk_clock_init();
     }
@@ -170,7 +170,7 @@ fn _sk_now_ns() {
 # Recommended cadence for ppm-level accuracy: hourly from a low-priority
 # context. x86_64: panics if invariant TSC has somehow disappeared (won't on
 # real hardware). aarch64: reads CNTFRQ_EL0 (architectural; cannot drift).
-fn sakshi_clock_recalibrate() {
+fn sakshi_clock_recalibrate(): i64 {
     _sk_tsc_freq_hz = 0;
     _sk_clock_init();
     return _sk_tsc_freq_hz;
@@ -180,7 +180,7 @@ fn sakshi_clock_recalibrate() {
 # Result = (ticks * scale) >> 32, computed via 64×64→128 multiply + double-
 # precision right shift so the full u64 tick range is safe with no native
 # 128-bit math.
-fn _sk_ticks_to_ns(ticks) {
+fn _sk_ticks_to_ns(ticks): i64 {
     var scale = _sk_tsc_scale;
     var ret: i64 = 0;
     #ifdef CYRIUS_ARCH_X86

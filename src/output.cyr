@@ -23,7 +23,7 @@ var _sk_output_target = SK_OUT_STDERR;
 # ================================================================
 var _sk_stderr_fd = 2;
 
-fn _sk_write_stderr(buf, len) {
+fn _sk_write_stderr(buf, len): i64 {
     syscall(_SK_SYS_WRITE, _sk_stderr_fd, buf, len);
     return 0;
 }
@@ -37,7 +37,7 @@ var _sk_file_fd: i64 = 0 - 1;
 # path must be a trusted, hardcoded or config-derived value — no user input.
 # flags: O_WRONLY | O_CREAT | O_APPEND = 1 | 64 | 1024 = 1089
 # mode: 0644 = 0x1A4
-fn sakshi_output_file(path) {
+fn sakshi_output_file(path): i64 {
     var fd = _sk_open(path, 1089, 0x1A4);
     if (fd < 0) { return fd; }
     _sk_file_fd = fd;
@@ -46,7 +46,7 @@ fn sakshi_output_file(path) {
 }
 
 # Close the file output target, revert to stderr
-fn sakshi_output_file_close() {
+fn sakshi_output_file_close(): i64 {
     if (_sk_file_fd >= 0) {
         syscall(_SK_SYS_CLOSE, _sk_file_fd);
         _sk_file_fd = 0 - 1;
@@ -55,7 +55,7 @@ fn sakshi_output_file_close() {
     return 0;
 }
 
-fn _sk_write_file(buf, len) {
+fn _sk_write_file(buf, len): i64 {
     if (_sk_file_fd >= 0) {
         syscall(_SK_SYS_WRITE, _sk_file_fd, buf, len);
     }
@@ -77,7 +77,7 @@ enum _SkRingConst {
 
 # Enable ring buffer output.
 # Emits a metadata event (level=0xFF) describing the binary format.
-fn sakshi_output_buffer() {
+fn sakshi_output_buffer(): i64 {
     _sk_output_target = SK_OUT_BUFFER;
     # Emit metadata event: version 1, 12-byte header layout
     # Payload: [version:u8] [hdr_size:u8] "sakshi"
@@ -90,7 +90,7 @@ fn sakshi_output_buffer() {
 }
 
 # Write a single byte into the ring buffer, advancing the write cursor
-fn _sk_ring_put(byte) {
+fn _sk_ring_put(byte): i64 {
     store8(&_sk_ring_buf + (_sk_ring_write & _SK_RING_MASK), byte);
     _sk_ring_write = _sk_ring_write + 1;
     return 0;
@@ -100,7 +100,7 @@ fn _sk_ring_put(byte) {
 # ts: pre-computed timestamp (callers share one _sk_now_ns per event)
 # level: log level, category: error category (0 for trace events)
 # msg: message pointer, msg_len: message length
-fn _sk_write_ring_event(ts, level, category, msg, msg_len) {
+fn _sk_write_ring_event(ts, level, category, msg, msg_len): i64 {
     # Build 12-byte header on stack, then copy into ring
     var hdr[12];
     store64(&hdr, ts);
@@ -131,7 +131,7 @@ fn _sk_write_ring_event(ts, level, category, msg, msg_len) {
 # Read raw ring buffer bytes into dst. Returns bytes read.
 # Reads the most recent data (up to 4096 bytes).
 # Caller must ensure dst points to a buffer of at least max_len bytes.
-fn sakshi_ring_read_raw(dst, max_len) {
+fn sakshi_ring_read_raw(dst, max_len): i64 {
     var avail = _sk_ring_write;
     if (avail > 4096) { avail = 4096; }
     if (avail > max_len) { avail = max_len; }
@@ -145,18 +145,18 @@ fn sakshi_ring_read_raw(dst, max_len) {
 }
 
 # Get the number of events written to the ring buffer
-fn sakshi_ring_event_count() {
+fn sakshi_ring_event_count(): i64 {
     return _sk_ring_count;
 }
 
 # Get the number of bytes used in the ring buffer (capped at 4096)
-fn sakshi_ring_len() {
+fn sakshi_ring_len(): i64 {
     if (_sk_ring_write > 4096) { return 4096; }
     return _sk_ring_write;
 }
 
 # Clear the ring buffer
-fn sakshi_ring_clear() {
+fn sakshi_ring_clear(): i64 {
     _sk_ring_write = 0;
     _sk_ring_count = 0;
     return 0;
@@ -165,7 +165,7 @@ fn sakshi_ring_clear() {
 # Decode one binary event from buf into a text line in dst.
 # Returns total bytes consumed from buf (header + msg), or 0 if not enough data.
 # Writes text "[timestamp] [LEVEL] msg\n" into dst, returns text len via out_text_len ptr.
-fn sakshi_ring_decode_event(buf, buf_len, dst, dst_cap, out_text_len) {
+fn sakshi_ring_decode_event(buf, buf_len, dst, dst_cap, out_text_len): i64 {
     if (buf_len < _SK_BIN_HDR_SIZE) {
         store64(out_text_len, 0);
         return 0;
@@ -224,7 +224,7 @@ var _sk_udp_addr[16];
 # WARNING: UDP transport is unencrypted and unauthenticated.
 # ip: 32-bit IPv4 address in network byte order
 # port: 16-bit port in host byte order
-fn sakshi_output_udp(ip, port) {
+fn sakshi_output_udp(ip, port): i64 {
     # socket(AF_INET=2, SOCK_DGRAM=2, 0)
     var fd = syscall(_SK_SYS_SOCKET, 2, 2, 0);
     if (fd < 0) { return fd; }
@@ -242,7 +242,7 @@ fn sakshi_output_udp(ip, port) {
 }
 
 # Close UDP socket, revert to stderr
-fn sakshi_output_udp_close() {
+fn sakshi_output_udp_close(): i64 {
     if (_sk_udp_fd >= 0) {
         syscall(_SK_SYS_CLOSE, _sk_udp_fd);
         _sk_udp_fd = 0 - 1;
@@ -254,7 +254,7 @@ fn sakshi_output_udp_close() {
 # Send a binary event packet over UDP.
 # ts: pre-computed timestamp (callers share one _sk_now_ns per event)
 # Packet format: same 12-byte header + message bytes.
-fn _sk_write_udp_event(ts, level, category, msg, msg_len) {
+fn _sk_write_udp_event(ts, level, category, msg, msg_len): i64 {
     if (_sk_udp_fd < 0) { return 0; }
 
     # Build packet in a stack buffer (12 header + msg, max 256)
@@ -277,7 +277,7 @@ fn _sk_write_udp_event(ts, level, category, msg, msg_len) {
 # Helper: build IPv4 address from 4 octets (e.g. 127, 0, 0, 1)
 # Returns 32-bit address in network byte order
 # ================================================================
-fn sakshi_ipv4(a, b, c, d) {
+fn sakshi_ipv4(a, b, c, d): i64 {
     return a | (b << 8) | (c << 16) | (d << 24);
 }
 
@@ -306,14 +306,14 @@ var _sk_emit_hook: i64 = 0;
 
 # Install a subscriber — all subsequent events are routed to fp.
 # Pass `&my_hook_fn` to register. Implicitly sets target to SK_OUT_HOOK.
-fn sakshi_set_emit_hook(fp) {
+fn sakshi_set_emit_hook(fp): i64 {
     _sk_emit_hook = fp;
     _sk_output_target = SK_OUT_HOOK;
     return 0;
 }
 
 # Uninstall the subscriber and revert output to stderr.
-fn sakshi_clear_emit_hook() {
+fn sakshi_clear_emit_hook(): i64 {
     _sk_emit_hook = 0;
     _sk_output_target = SK_OUT_STDERR;
     return 0;
@@ -324,14 +324,14 @@ fn sakshi_clear_emit_hook() {
 # ================================================================
 
 # Text write — used by stderr and file targets
-fn _sk_write(buf, len) {
+fn _sk_write(buf, len): i64 {
     if (_sk_output_target == SK_OUT_FILE) { return _sk_write_file(buf, len); }
     # stderr is also text
     return _sk_write_stderr(buf, len);
 }
 
 # Level-to-string helper using match
-fn _sk_level_str(level, out_str, out_len) {
+fn _sk_level_str(level, out_str, out_len): i64 {
     match level {
         0  => { store64(out_str, "FATAL"); store64(out_len, 5); }
         1  => { store64(out_str, "ERROR"); store64(out_len, 5); }
@@ -349,7 +349,7 @@ fn _sk_level_str(level, out_str, out_len) {
 
 # Event write — used by trace.cyr for ring buffer and UDP (binary),
 # falls back to text formatting for stderr/file. Computes ts once.
-fn _sk_emit(level, category, msg, msg_len) {
+fn _sk_emit(level, category, msg, msg_len): i64 {
     var ts = _sk_now_ns();
     if (_sk_output_target == SK_OUT_HOOK) {
         if (_sk_emit_hook != 0) {
@@ -375,7 +375,7 @@ fn _sk_emit(level, category, msg, msg_len) {
 
 # Span emit — binary for buffer/UDP, text for stderr/file.
 # ts: caller-supplied (span_enter/span_exit already read the clock).
-fn _sk_emit_span(ts, action_level, action_str, action_len, name, name_len, elapsed_ns) {
+fn _sk_emit_span(ts, action_level, action_str, action_len, name, name_len, elapsed_ns): i64 {
     if (_sk_output_target == SK_OUT_HOOK) {
         if (_sk_emit_hook != 0) {
             fncall6(_sk_emit_hook, ts, action_level, 0, name, name_len, elapsed_ns);
@@ -397,14 +397,14 @@ fn _sk_emit_span(ts, action_level, action_str, action_len, name, name_len, elaps
 # ================================================================
 # Public: set output target directly
 # ================================================================
-fn sakshi_set_output(target) {
+fn sakshi_set_output(target): i64 {
     _sk_output_target = target;
     return 0;
 }
 
 # Legacy compat: set fd directly (forces stderr target mode)
 # fd must be a valid open file descriptor (>= 0).
-fn sakshi_set_output_fd(fd) {
+fn sakshi_set_output_fd(fd): i64 {
     if (fd < 0) { return 0 - 1; }
     _sk_stderr_fd = fd;
     _sk_output_target = SK_OUT_STDERR;

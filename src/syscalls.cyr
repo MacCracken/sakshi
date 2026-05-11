@@ -40,7 +40,7 @@ var _SK_AT_FDCWD          = 0 - 100;
 # open(path, flags, mode) — arity-stable wrapper. x86_64 calls `open`;
 # aarch64 calls `openat(AT_FDCWD, path, flags, mode)`. Returns fd or
 # negative errno.
-fn _sk_open(path, flags, mode) {
+fn _sk_open(path, flags, mode): i64 {
     #ifdef CYRIUS_ARCH_X86
     return syscall(_SK_SYS_OPEN, path, flags, mode);
     #endif

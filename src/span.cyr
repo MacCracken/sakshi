@@ -24,7 +24,7 @@ enum _SkSpanConst {
 # Enter a span — push name + timestamp onto the stack.
 # One _sk_now_ns per call: the same reading seeds both the stack start time
 # and the emitted event's timestamp.
-fn sakshi_span_enter(name, name_len) {
+fn sakshi_span_enter(name, name_len): i64 {
     if (_sk_span_depth >= _SK_MAX_SPANS) { return 0; }
     var ts = _sk_now_ns();
     var offset = _sk_span_depth * 24;
@@ -39,7 +39,7 @@ fn sakshi_span_enter(name, name_len) {
 
 # Exit the current span — pop, compute elapsed, emit.
 # One _sk_now_ns per call: used for both elapsed computation and event ts.
-fn sakshi_span_exit() {
+fn sakshi_span_exit(): i64 {
     if (_sk_span_depth <= 0) { return 0; }
     _sk_span_depth = _sk_span_depth - 1;
     var offset = _sk_span_depth * 24;
@@ -54,18 +54,18 @@ fn sakshi_span_exit() {
 }
 
 # Get current span depth
-fn sakshi_span_depth() {
+fn sakshi_span_depth(): i64 {
     return _sk_span_depth;
 }
 
 # Set the active trace ID for correlating spans and events.
 # Typically set once at the root span of a request/operation.
-fn sakshi_trace_set(id) {
+fn sakshi_trace_set(id): i64 {
     _sk_trace_id = id;
     return 0;
 }
 
 # Get the active trace ID.
-fn sakshi_trace_id() {
+fn sakshi_trace_id(): i64 {
     return _sk_trace_id;
 }
