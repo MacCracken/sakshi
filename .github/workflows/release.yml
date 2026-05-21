@@ -51,9 +51,10 @@ jobs:
           mkdir -p "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin" "$HOME/.cyrius/versions/$CYRIUS_VERSION/lib"
           cp "$CYRIUS_DIR/bin/"* "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/" 2>/dev/null || true
           cp -r "$CYRIUS_DIR/lib/"* "$HOME/.cyrius/versions/$CYRIUS_VERSION/lib/" 2>/dev/null || true
-          # cc5_aarch64 ships at the tarball top level in 5.7.48+ (was bin/
-          # pre-5.7.48). Mirror the workaround used in ci.yml + yukti.
-          [ -f "$CYRIUS_DIR/cc5_aarch64" ] && cp "$CYRIUS_DIR/cc5_aarch64" "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/"
+          # cycc_aarch64 (renamed from cc5_aarch64 in Cyrius 6.0) may
+          # ship under bin/ or at the tarball top-level depending on
+          # the release. Cover both. Mirrors agnosys/yukti install.
+          [ -f "$CYRIUS_DIR/cycc_aarch64" ] && cp "$CYRIUS_DIR/cycc_aarch64" "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/"
           chmod +x "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/"* 2>/dev/null || true
           ln -sfn "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin" "$HOME/.cyrius/bin"
           ln -sfn "$HOME/.cyrius/versions/$CYRIUS_VERSION/lib" "$HOME/.cyrius/lib"

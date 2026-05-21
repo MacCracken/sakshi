@@ -28,17 +28,20 @@ jobs:
           mkdir -p "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin" "$HOME/.cyrius/versions/$CYRIUS_VERSION/lib"
           cp "$CYRIUS_DIR/bin/"* "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/" 2>/dev/null || true
           cp -r "$CYRIUS_DIR/lib/"* "$HOME/.cyrius/versions/$CYRIUS_VERSION/lib/" 2>/dev/null || true
-          # cc5_aarch64 packaging changed across the 5.7.x line: pre-5.7.48
-          # tarballs ship it under bin/ (picked up by the bin/* copy above),
-          # 5.7.48+ moved it to the tarball top-level. Cover both. (Same
-          # workaround as yukti/.github/workflows/ci.yml.)
-          [ -f "$CYRIUS_DIR/cc5_aarch64" ] && cp "$CYRIUS_DIR/cc5_aarch64" "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/"
+          # cycc_aarch64 (renamed from cc5_aarch64 in Cyrius 6.0) may
+          # ship under bin/ (picked up by the bin/* copy above) or at
+          # the tarball top-level depending on the release. Cover both.
+          # Same workaround as agnosys/.github/workflows/ci.yml.
+          [ -f "$CYRIUS_DIR/cycc_aarch64" ] && cp "$CYRIUS_DIR/cycc_aarch64" "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/"
           chmod +x "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/"* 2>/dev/null || true
           ln -sfn "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin" "$HOME/.cyrius/bin"
           ln -sfn "$HOME/.cyrius/versions/$CYRIUS_VERSION/lib" "$HOME/.cyrius/lib"
           echo "$CYRIUS_VERSION" > "$HOME/.cyrius/current"
           echo "$HOME/.cyrius/bin" >> $GITHUB_PATH
           echo "CYRIUS_HOME=$HOME/.cyrius" >> $GITHUB_ENV
+
+      - name: Verify toolchain
+        run: cyrius --version
 
       - name: Resolve dependencies
         run: cyrius deps
@@ -97,11 +100,11 @@ jobs:
           mkdir -p "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin" "$HOME/.cyrius/versions/$CYRIUS_VERSION/lib"
           cp "$CYRIUS_DIR/bin/"* "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/" 2>/dev/null || true
           cp -r "$CYRIUS_DIR/lib/"* "$HOME/.cyrius/versions/$CYRIUS_VERSION/lib/" 2>/dev/null || true
-          # cc5_aarch64 packaging changed across the 5.7.x line: pre-5.7.48
-          # tarballs ship it under bin/ (picked up by the bin/* copy above),
-          # 5.7.48+ moved it to the tarball top-level. Cover both. (Same
-          # workaround as yukti/.github/workflows/ci.yml.)
-          [ -f "$CYRIUS_DIR/cc5_aarch64" ] && cp "$CYRIUS_DIR/cc5_aarch64" "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/"
+          # cycc_aarch64 (renamed from cc5_aarch64 in Cyrius 6.0) may
+          # ship under bin/ (picked up by the bin/* copy above) or at
+          # the tarball top-level depending on the release. Cover both.
+          # Same workaround as agnosys/.github/workflows/ci.yml.
+          [ -f "$CYRIUS_DIR/cycc_aarch64" ] && cp "$CYRIUS_DIR/cycc_aarch64" "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/"
           chmod +x "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/"* 2>/dev/null || true
           ln -sfn "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin" "$HOME/.cyrius/bin"
           ln -sfn "$HOME/.cyrius/versions/$CYRIUS_VERSION/lib" "$HOME/.cyrius/lib"
@@ -109,10 +112,10 @@ jobs:
           echo "$HOME/.cyrius/bin" >> $GITHUB_PATH
           echo "CYRIUS_HOME=$HOME/.cyrius" >> $GITHUB_ENV
 
-      - name: Verify cc5_aarch64 present
+      - name: Verify cycc_aarch64 present
         run: |
-          if [ ! -x "$HOME/.cyrius/bin/cc5_aarch64" ]; then
-            echo "::error::cc5_aarch64 missing from Cyrius $CYRIUS_VERSION install"
+          if [ ! -x "$HOME/.cyrius/bin/cycc_aarch64" ]; then
+            echo "::error::cycc_aarch64 missing from Cyrius $CYRIUS_VERSION install"
             exit 1
           fi
 

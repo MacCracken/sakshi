@@ -5,6 +5,23 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.5] - 2026-05-21
+
+### Changed
+
+- `cyrius` pin bumped 5.11.4 → 6.0.1. No source changes — verified
+  locally: `cyrius deps` clean, smoke green, 57/57 tests pass,
+  aarch64 cross-build produces a valid `ARM aarch64` ELF.
+- **CI/release: `cc5_aarch64` → `cycc_aarch64`.** Cyrius 6.0 renamed
+  the aarch64 backend binary; both `.github/workflows/ci.yml` and
+  `.github/workflows/release.yml` now copy `cycc_aarch64` from the
+  tarball top-level and the dedicated aarch64 lane verifies the new
+  name. 6.0.1 still ships `cc5_aarch64` as a compat alias, but we
+  track the canonical name to stay aligned with agnosys/yukti. Added
+  a `cyrius --version` step to the build job to surface the resolved
+  toolchain at the top of CI logs (matches agnosys posture).
+- `dist/sakshi.cyr` regenerated via `scripts/bundle.sh` at v2.2.5.
+
 ## [2.2.4] - 2026-05-11
 
 ### Changed
