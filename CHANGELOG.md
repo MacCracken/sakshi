@@ -5,6 +5,15 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.6] - 2026-06-03
+
+### Changed
+
+- `cyrius` pin bumped 6.0.1 → 6.0.52. No source changes — verified
+  locally: `cyrius deps` clean, smoke green, 57/57 tests pass,
+  aarch64 cross-build produces a valid `ARM aarch64` ELF.
+- `dist/sakshi.cyr` regenerated via `scripts/bundle.sh` at v2.2.6.
+
 ## [2.2.5] - 2026-05-21
 
 ### Changed

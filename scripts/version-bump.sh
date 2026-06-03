@@ -7,8 +7,9 @@ NEW_VERSION="${1:?Usage: $0 <new-version>}"
 # VERSION file (source of truth)
 echo "$NEW_VERSION" > VERSION
 
-# cyrius.cyml
-sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" cyrius.cyml
+# cyrius.cyml derives its version from VERSION via `version = "${file:VERSION}"`,
+# so there is nothing to rewrite here — touching it would clobber the template
+# with a stale literal.
 
 # CHANGELOG.md — add section header if missing.
 # `sed -i "/PATTERN/i ..."` inserts before EVERY matching line, not just the
@@ -28,10 +29,10 @@ fi
 
 echo "Bumped to $NEW_VERSION"
 echo ""
-echo "Updated: VERSION, cyrius.cyml, CHANGELOG.md"
+echo "Updated: VERSION, CHANGELOG.md (cyrius.cyml tracks VERSION automatically)"
 echo ""
 echo "Next steps:"
-echo "  git add VERSION cyrius.cyml CHANGELOG.md"
+echo "  git add VERSION CHANGELOG.md"
 echo "  git commit -m 'release: $NEW_VERSION'"
 echo "  git tag $NEW_VERSION"
 echo "  git push origin main --tags"
