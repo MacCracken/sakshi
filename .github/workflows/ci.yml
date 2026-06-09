@@ -133,6 +133,85 @@ jobs:
           file build/sakshi-smoke-aarch64 | grep -q "ARM aarch64" || { echo "FAIL: not an aarch64 ELF"; exit 1; }
           echo "sakshi-smoke-aarch64: $(wc -c < build/sakshi-smoke-aarch64) bytes"
 
+  build-windows:
+    name: Cross-build + run (Windows PE)
+    # PE build+RUN gate. Unlike the aarch64 lane (compile-only, runtime held
+    # for qemu), this one actually executes the binary under wine and asserts
+    # a known log line reaches stderr — the gate that would have caught the
+    # v2.2.6 silent-drop regression (var-slot syscall numbers defeat the PE
+    # reroute) at commit time instead of in a downstream consumer.
+    # See docs/development/issues/2026-06-09-windows-pe-var-syscall-no-reroute.md.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Cyrius toolchain
+        run: |
+          CYRIUS_VERSION="${CYRIUS_VERSION:-$(grep '^cyrius = ' cyrius.cyml | head -1 | sed 's/cyrius = "\(.*\)"/\1/')}"
+          echo "Installing Cyrius $CYRIUS_VERSION"
+          curl -sLO "https://github.com/MacCracken/cyrius/releases/download/$CYRIUS_VERSION/cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
+          tar xzf "cyrius-$CYRIUS_VERSION-x86_64-linux.tar.gz"
+          CYRIUS_DIR="cyrius-$CYRIUS_VERSION-x86_64-linux"
+          mkdir -p "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin" "$HOME/.cyrius/versions/$CYRIUS_VERSION/lib"
+          cp "$CYRIUS_DIR/bin/"* "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/" 2>/dev/null || true
+          cp -r "$CYRIUS_DIR/lib/"* "$HOME/.cyrius/versions/$CYRIUS_VERSION/lib/" 2>/dev/null || true
+          # cycc_win (PE backend) ships under bin/ — picked up by bin/* above.
+          # Cover the top-level fallback too, same as the aarch64 lane.
+          [ -f "$CYRIUS_DIR/cycc_win" ] && cp "$CYRIUS_DIR/cycc_win" "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/"
+          chmod +x "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin/"* 2>/dev/null || true
+          ln -sfn "$HOME/.cyrius/versions/$CYRIUS_VERSION/bin" "$HOME/.cyrius/bin"
+          ln -sfn "$HOME/.cyrius/versions/$CYRIUS_VERSION/lib" "$HOME/.cyrius/lib"
+          echo "$CYRIUS_VERSION" > "$HOME/.cyrius/current"
+          echo "$HOME/.cyrius/bin" >> $GITHUB_PATH
+          echo "CYRIUS_HOME=$HOME/.cyrius" >> $GITHUB_ENV
+
+      - name: Verify cycc_win present
+        run: |
+          if [ ! -x "$HOME/.cyrius/bin/cycc_win" ]; then
+            echo "::error::cycc_win missing from Cyrius $CYRIUS_VERSION install"
+            exit 1
+          fi
+
+      - name: Install wine (PE runner)
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wine wine64 xvfb
+
+      - name: Resolve dependencies
+        run: cyrius deps
+
+      - name: Cross-build smoke (--win, DCE)
+        run: |
+          mkdir -p build
+          CYRIUS_DCE=1 cyrius build --win -D SAKSHI_SMOKE programs/smoke.cyr build/sakshi-smoke.exe
+
+      - name: Verify PE32+ executable
+        run: |
+          file build/sakshi-smoke.exe
+          file build/sakshi-smoke.exe | grep -q "PE32+" || { echo "FAIL: not a PE32+ executable"; exit 1; }
+          echo "sakshi-smoke.exe: $(wc -c < build/sakshi-smoke.exe) bytes"
+
+      - name: Run under wine — assert log reaches stderr
+        env:
+          WINEDEBUG: "-all"
+          WINEPREFIX: ${{ github.workspace }}/.winepfx
+          WINEARCH: win64
+        run: |
+          # The whole point of the gate: a clean-compiling PE that logged
+          # NOTHING is the bug. Capture the binary's output and require the
+          # known line to actually appear. xvfb-run keeps wine happy without
+          # a display; the smoke binary writes to stderr (fd 2).
+          out=$(xvfb-run -a wine build/sakshi-smoke.exe 2>&1 || true)
+          echo "----- PE binary output -----"
+          echo "$out"
+          echo "----------------------------"
+          echo "$out" | grep -q "sakshi smoke ok" || {
+            echo "::error::PE binary emitted no 'sakshi smoke ok' line — Windows logging is silently dropped (W1 regression)";
+            exit 1;
+          }
+          echo "PE stderr logging reaches output ✓"
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest

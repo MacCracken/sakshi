@@ -1,5 +1,5 @@
 # sakshi.cyr — tracing, error handling, and structured logging for Cyrius
-# Bundled distribution of sakshi v2.2.6
+# Bundled distribution of sakshi v2.2.7
 # Source: https://github.com/MacCracken/sakshi
 # License: GPL-3.0-only
 #
@@ -61,11 +61,19 @@ var _SK_AT_FDCWD          = 0 - 100;
 # aarch64 calls `openat(AT_FDCWD, path, flags, mode)`. Returns fd or
 # negative errno.
 fn _sk_open(path, flags, mode): i64 {
+    #ifdef CYRIUS_TARGET_WIN
+    # cycc_win predefines CYRIUS_ARCH_X86 too, so this branch must take
+    # precedence: the var-slot `_SK_SYS_OPEN` doesn't constant-fold and the PE
+    # CreateFileW reroute only fires for a literal `2`. Linux-shaped `flags`
+    # (O_WRONLY|O_CREAT|O_APPEND = 1089) are decomposed inside the reroute.
+    return syscall(2, path, flags, mode);
+    #else
     #ifdef CYRIUS_ARCH_X86
     return syscall(_SK_SYS_OPEN, path, flags, mode);
     #endif
     #ifdef CYRIUS_ARCH_AARCH64
     return syscall(_SK_SYS_OPENAT, _SK_AT_FDCWD, path, flags, mode);
+    #endif
     #endif
 }
 
@@ -156,8 +164,15 @@ fn _sk_cpuid_invariant_tsc(): i64 {
 
 # Write to fd 2 and exit. Used for the invariant-TSC-absent panic.
 fn _sk_clock_panic(msg, len): i64 {
+    #ifdef CYRIUS_TARGET_WIN
+    # Literal numbers so the PE reroute fires (WriteFile / ExitProcess);
+    # the var slots used on Linux don't constant-fold on PE.
+    syscall(1, 2, msg, len);
+    syscall(60, 1);
+    #else
     syscall(_SK_SYS_WRITE, 2, msg, len);
     syscall(_SK_SYS_EXIT, 1);
+    #endif
     return 0;
 }
 
@@ -166,7 +181,14 @@ fn _sk_clock_panic(msg, len): i64 {
 # anchor is in the same time base as a non-cycle-counter implementation.
 fn _sk_clock_now_ns_raw(): i64 {
     var ts[2];
+    #ifdef CYRIUS_TARGET_WIN
+    # clock_gettime (228) IS in the PE reroute whitelist, but only as a
+    # compile-time-literal — the var slot `_SK_SYS_CLOCK_GETTIME` wouldn't
+    # fold. The reroute presents a Linux-shaped {tv_sec, tv_nsec} timespec.
+    var ret = syscall(228, 4, &ts);
+    #else
     var ret = syscall(_SK_SYS_CLOCK_GETTIME, 4, &ts);
+    #endif
     if (ret < 0) { return 0; }
     return load64(&ts) * 1000000000 + load64(&ts + 8);
 }
@@ -185,11 +207,27 @@ fn _sk_clock_init(): i64 {
     var t0_ns = _sk_clock_now_ns_raw();
     var t0_ticks = _sk_now_ticks();
 
+    #ifdef CYRIUS_TARGET_WIN
+    # PE: nanosleep (35) is NOT in the syscall reroute whitelist, so the
+    # Linux 10 ms sleep window is unavailable. Busy-spin on the routed
+    # (literal) clock_gettime until ~10 ms of wall time has elapsed. The
+    # spin is bounded so a degenerate clock source can never hang init —
+    # if the bound trips, dn stays ~0 below and freq is left uncalibrated
+    # (timestamps degrade to 0 rather than the process spinning forever).
+    var target_ns = t0_ns + 10000000;
+    var spins: i64 = 0;
+    var now_ns = t0_ns;
+    while (now_ns < target_ns) {
+        if (spins > 200000000) { now_ns = target_ns; }
+        else { now_ns = _sk_clock_now_ns_raw(); spins = spins + 1; }
+    }
+    #else
     # nanosleep(10 ms). timespec is { tv_sec, tv_nsec }.
     var sleep_ts[2];
     store64(&sleep_ts, 0);
     store64(&sleep_ts + 8, 10000000);
     syscall(_SK_SYS_NANOSLEEP, &sleep_ts, 0);
+    #endif
 
     var t1_ticks = _sk_now_ticks();
     var t1_ns = _sk_clock_now_ns_raw();
@@ -226,10 +264,21 @@ fn _sk_clock_init(): i64 {
 # origin), but monotonicity and ns scaling are preserved — span elapsed
 # computation and event ordering are unaffected.
 fn _sk_now_ns(): i64 {
+    #ifdef CYRIUS_TARGET_WIN
+    # Windows PE: the TSC calibration path uses nanosleep(35) + clock_gettime
+    # via the `var`-held _SK_SYS_* numbers, neither of which reroutes on PE
+    # (the PE syscall reroute only fires for a compile-time-LITERAL number —
+    # see issues/2026-06-09-windows-pe-var-syscall-no-reroute.md). Use the
+    # literal `syscall(228, …)` reroute → GetTickCount64() (ms in rax) and
+    # scale to ns. Coarse (ms) but monotonic, calibration-free, and crash-free.
+    return syscall(228, 0, 0) * 1000000;
+    #endif
+    #ifndef CYRIUS_TARGET_WIN
     if (_sk_tsc_scale == 0) {
         _sk_clock_init();
     }
     return _sk_ticks_to_ns(_sk_now_ticks());
+    #endif
 }
 
 # Re-run the calibration loop and refresh _sk_tsc_freq_hz / _sk_tsc_scale.
@@ -487,7 +536,16 @@ var _sk_output_target = SK_OUT_STDERR;
 var _sk_stderr_fd = 2;
 
 fn _sk_write_stderr(buf, len): i64 {
+    #ifdef CYRIUS_TARGET_WIN
+    # The Win64 PE syscall reroute (→ GetStdHandle+WriteFile) only fires for a
+    # compile-time-LITERAL number; the v2.2.2 var-slot `_SK_SYS_WRITE` does not
+    # constant-fold, so on PE it falls through to a raw, non-functional syscall
+    # and emits nothing. Literal `1` keeps the reroute alive on Windows.
+    # See issues/2026-06-09-windows-pe-var-syscall-no-reroute.md.
+    syscall(1, _sk_stderr_fd, buf, len);
+    #else
     syscall(_SK_SYS_WRITE, _sk_stderr_fd, buf, len);
+    #endif
     return 0;
 }
 
@@ -511,7 +569,11 @@ fn sakshi_output_file(path): i64 {
 # Close the file output target, revert to stderr
 fn sakshi_output_file_close(): i64 {
     if (_sk_file_fd >= 0) {
+        #ifdef CYRIUS_TARGET_WIN
+        syscall(3, _sk_file_fd);                  # literal → CloseHandle on PE
+        #else
         syscall(_SK_SYS_CLOSE, _sk_file_fd);
+        #endif
         _sk_file_fd = 0 - 1;
     }
     _sk_output_target = SK_OUT_STDERR;
@@ -520,7 +582,11 @@ fn sakshi_output_file_close(): i64 {
 
 fn _sk_write_file(buf, len): i64 {
     if (_sk_file_fd >= 0) {
+        #ifdef CYRIUS_TARGET_WIN
+        syscall(1, _sk_file_fd, buf, len);        # literal → WriteFile on PE
+        #else
         syscall(_SK_SYS_WRITE, _sk_file_fd, buf, len);
+        #endif
     }
     return 0;
 }
@@ -678,6 +744,11 @@ fn sakshi_ring_decode_event(buf, buf_len, dst, dst_cap, out_text_len): i64 {
 # UDP network target — binary events
 # ================================================================
 # Uses sendto syscall (44 on x86_64) with AF_INET (2) + SOCK_DGRAM (2)
+#
+# NOT SUPPORTED ON WINDOWS (PE). `socket` (41) and `sendto` (44) are not in
+# the Win64 PE syscall reroute whitelist, so SK_OUT_UDP emits nothing on a
+# PE target. Windows consumers must use the stderr or file target (both
+# routed). Tracked in issues/2026-06-09-windows-pe-var-syscall-no-reroute.md.
 var _sk_udp_fd: i64 = 0 - 1;
 
 # sockaddr_in: { sin_family: u16, sin_port: u16, sin_addr: u32, zero: u64 } = 16 bytes

@@ -1,11 +1,12 @@
 # Sakshi Development Roadmap
 
-> **v2.2.2** — aarch64 portability patch. New `src/syscalls.cyr` arch-dispatches syscall numbers + `_sk_open` wrapper; new qemu-user-static CI lane runs smoke + full test suite on aarch64 ELFs. Closes the v2.2.x patch lane. v2.2.0 API surface unchanged.
+> **v2.2.7** — Windows/PE patch (P1). `#ifdef CYRIUS_TARGET_WIN` literal-syscall branches in `src/output.cyr` / `src/syscalls.cyr` / `src/clock.cyr` un-break PE I/O (the v2.2.2 `var`-dispatch defeated the literal-only PE reroute → silent total output loss); new live `build-windows` CI gate runs the PE smoke under wine. Pin → cyrius 6.1.15. v2.2.0 API surface unchanged.
 
 ---
 
 ## Completed
 
+- **v2.2.7** — Windows/PE output fix (W1) + live PE CI gate under wine (W2). Pin → cyrius 6.1.15. Closes the Windows/PE P1 lane. UDP stays unsupported on PE (documented).
 - **v2.2.2** — aarch64 portability: `src/syscalls.cyr` arch-dispatch, `_sk_open` wrapper, qemu CI lane. v2.2.x patch lane closed.
 - **v2.2.1** — internal patch: trace.cyr dual-define cleanup (cyrius 5.7.48 fn-body `#ifdef` works), `sakshi_clock_recalibrate()` for long-running consumers. 57 tests.
 - **v2.2.0** — cycle-counter timestamps (`src/clock.cyr`, x86_64 + aarch64). 53 tests. `timestamp` 373 → 22 ns; cascading hot-path wins.
@@ -44,6 +45,21 @@ Scope:
 - Doc: explicit trade-off note vs. the future per-CPU ring (which lands when sched-affinity wrappers do).
 
 Why minor (not patch): adds a new public output target and ring-reader API surface.
+
+---
+
+## Windows / PE support — **P1** (closed, v2.2.7)
+
+First sakshi consumer to ship a Windows PE binary (ai-hwaccel 2.3.9) found that **all sakshi output was silently dropped on Windows**: the v2.2.2 `var`-slot syscall numbers (`src/syscalls.cyr`) are non-literal at every call site, and cyrius's Win64 PE syscall reroute only fires for a **compile-time-literal** number — so `syscall(_SK_SYS_WRITE, …)` fell through to a raw, non-functional instruction and wrote nothing (no fault, exit 0). Full write-up + repro: [`issues/2026-06-09-windows-pe-var-syscall-no-reroute.md`](issues/2026-06-09-windows-pe-var-syscall-no-reroute.md). Upstream cyrius issue: [`2026-06-09-pe-syscall-variable-number-not-rerouted.md`](https://github.com/MacCracken/cyrius/blob/main/docs/development/issues/2026-06-09-pe-syscall-variable-number-not-rerouted.md).
+
+Both items shipped in **v2.2.7**.
+
+| # | Item | Priority | Status |
+|---|------|----------|--------|
+| W1 | **PE I/O actually emits** — `#ifdef CYRIUS_TARGET_WIN` literal-syscall branches in `src/output.cyr` (`_sk_write_stderr`/`_sk_write_file` → `1`, close → `3`) and `src/syscalls.cyr` `_sk_open` (→ `2`, takes precedence over the `CYRIUS_ARCH_X86` branch `cycc_win` also predefines). `src/clock.cyr` skips the unrouted `nanosleep`(35) calibration on PE — a bounded busy-spin on the routed literal `clock_gettime`(228) replaces it, and the panic helper uses literal `write(1)`/`exit(60)`. UDP (`socket`/`sendto` 41/44, unrouted on PE) stays unsupported on Windows, documented in `src/output.cyr`. | **P1** | **Done — v2.2.7.** sakshi-side stopgap; the *clean* fix remains upstream runtime-dispatch of non-literal syscall numbers under `_TARGET_PE`. |
+| W2 | **Windows CI gate** — `build-windows` lane cross-builds the smoke with `cycc_win` (DCE) and **runs it under wine**, asserting the `sakshi smoke ok` line reaches stderr (not just "it compiled"). The PE analog of the aarch64 qemu lane — and, unlike that held lane, the PE runtime gate is live. | **P1** | **Done — v2.2.7.** |
+
+Both were P1: a consumer shipped a Windows wheel with logging silently dead and there was **no CI** to catch it — W2 is the gate, W1 is the fix.
 
 ---
 

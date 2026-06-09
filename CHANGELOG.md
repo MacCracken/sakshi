@@ -5,6 +5,61 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.7] - 2026-06-09
+
+### Fixed
+
+- **Windows / PE output no longer silently dropped (P1).** Since v2.2.2,
+  `src/syscalls.cyr` held syscall numbers in `var` slots so the arch
+  dispatch is a value swap. The Win64 PE syscall reroute
+  (`syscall(1,…)` → `GetStdHandle`+`WriteFile`) only fires for a
+  **compile-time-literal** number, so every sakshi I/O call
+  (`syscall(_SK_SYS_WRITE, …)`) fell through to a raw, non-functional
+  instruction and emitted **nothing** — no fault, exit 0. The first PE
+  consumer (ai-hwaccel 2.3.9) shipped with logging silently dead.
+  Fix: `#ifdef CYRIUS_TARGET_WIN` branches in `src/output.cyr`
+  (`_sk_write_stderr` / `_sk_write_file` → literal `1`; file close →
+  literal `3`) and `src/syscalls.cyr` `_sk_open` (literal `2` →
+  `CreateFileW`, taking precedence over the `CYRIUS_ARCH_X86` branch
+  `cycc_win` also predefines). `src/clock.cyr` calibration:
+  `nanosleep` (35) is **not** in the PE reroute whitelist, so under
+  `CYRIUS_TARGET_WIN` the 10 ms calibration window is a bounded
+  busy-spin on the routed (literal) `clock_gettime` (228) instead; the
+  panic helper uses literal `write(1)`/`exit(60)`. The Linux x86_64 /
+  aarch64 / AGNOS / macOS `var`-dispatch paths are unchanged (guarded
+  out on PE). Verified: PE binary cross-built with `cycc_win` emits its
+  log line under wine (was zero bytes before the fix). Full write-up:
+  [`issues/2026-06-09-windows-pe-var-syscall-no-reroute.md`](docs/development/issues/2026-06-09-windows-pe-var-syscall-no-reroute.md).
+  The *clean* fix remains upstream runtime-dispatch of non-literal PE
+  syscall numbers; this is the sakshi-side stopgap.
+
+### Added
+
+- **Windows PE CI gate.** New `build-windows` lane in
+  `.github/workflows/ci.yml` cross-builds the smoke program with
+  `cycc_win` (DCE) and **runs it under wine**, asserting the known
+  `sakshi smoke ok` line actually reaches stderr — not just "it
+  compiled". This is the gate that would have caught the v2.2.6
+  silent-drop regression at commit time. Unlike the aarch64 lane
+  (compile-only; runtime held for qemu), the PE runtime gate is live.
+
+### Changed
+
+- `cyrius` pin bumped 6.0.52 → 6.1.15. 6.1.15's `cycc_win` prints the
+  PE syscall-reroute whitelist (`0,1,2,3,8,9,60,83,87,228` + the
+  `0xF0xx` Win32 helpers) at build time, which pinned down the literal
+  numbers the W1 fix relies on. Verified: `cyrius deps` clean, smoke
+  green, 57/57 tests pass, aarch64 cross-build produces a valid
+  `ARM aarch64` ELF, PE build emits under wine.
+- `dist/sakshi.cyr` regenerated via `scripts/bundle.sh` at v2.2.7.
+
+### Notes
+
+- **UDP output (`SK_OUT_UDP`) remains unsupported on Windows.**
+  `socket` (41) and `sendto` (44) are not in the PE reroute whitelist;
+  Windows consumers must use the stderr or file target (both routed).
+  Documented in `src/output.cyr`.
+
 ## [2.2.6] - 2026-06-03
 
 ### Changed
