@@ -1,13 +1,12 @@
 # Sakshi Development Roadmap
 
-> **v2.2.8** — toolchain pin → cyrius 6.1.16. Closes the Windows/PE release-packaging blocker: 6.1.16 is the first x86_64 tarball that ships `cycc_win` (missing since cyrius 6.0.50, the CI blocker) and routes PE `syscall(<var>,…)` at runtime — the clean upstream fix for the v2.2.2 silent-output-drop. No sakshi source changes; the v2.2.7 `#ifdef CYRIUS_TARGET_WIN` stopgap is retained (redundant but harmless). 57/57 tests; PE binary emits under wine. v2.2.0 API surface unchanged.
+> **v2.2.7** — Windows/PE patch (P1) via the clean upstream fix. Pin → cyrius 6.1.16, the first x86_64 tarball to ship `cycc_win` (absent since 6.0.50 — the CI blocker) and to route PE `syscall(<var>,…)` at runtime. sakshi's portable `var`-dispatch idiom now works on PE with **no sakshi-side syscall workaround**; only one `#ifdef` remains in `src/clock.cyr` for the still-unrouted `nanosleep`. New live `build-windows` CI gate runs the PE smoke under wine. v2.2.0 API surface unchanged.
 
 ---
 
 ## Completed
 
-- **v2.2.8** — pin → cyrius 6.1.16. Ships `cycc_win` in the tarball + runtime PE `var`-syscall dispatch (upstream fixes for the v2.2.7 stopgap). No source changes; stopgap retained. UDP stays unsupported on PE (documented).
-- **v2.2.7** — Windows/PE output fix (W1) + live PE CI gate under wine (W2). Pin → cyrius 6.1.15. Closes the Windows/PE P1 lane. UDP stays unsupported on PE (documented).
+- **v2.2.7** — Windows/PE output fix (W1) + live PE CI gate under wine (W2). Pin → cyrius 6.1.16 (ships `cycc_win`; routes PE `var`-syscalls at runtime). No sakshi-side syscall stopgap — the portable idiom works on PE; only the `nanosleep`/clock `#ifdef` remains. Closes the Windows/PE P1 lane. UDP stays unsupported on PE (documented).
 - **v2.2.2** — aarch64 portability: `src/syscalls.cyr` arch-dispatch, `_sk_open` wrapper, qemu CI lane. v2.2.x patch lane closed.
 - **v2.2.1** — internal patch: trace.cyr dual-define cleanup (cyrius 5.7.48 fn-body `#ifdef` works), `sakshi_clock_recalibrate()` for long-running consumers. 57 tests.
 - **v2.2.0** — cycle-counter timestamps (`src/clock.cyr`, x86_64 + aarch64). 53 tests. `timestamp` 373 → 22 ns; cascading hot-path wins.

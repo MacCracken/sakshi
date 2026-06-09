@@ -24,16 +24,7 @@ var _sk_output_target = SK_OUT_STDERR;
 var _sk_stderr_fd = 2;
 
 fn _sk_write_stderr(buf, len): i64 {
-    #ifdef CYRIUS_TARGET_WIN
-    # The Win64 PE syscall reroute (→ GetStdHandle+WriteFile) only fires for a
-    # compile-time-LITERAL number; the v2.2.2 var-slot `_SK_SYS_WRITE` does not
-    # constant-fold, so on PE it falls through to a raw, non-functional syscall
-    # and emits nothing. Literal `1` keeps the reroute alive on Windows.
-    # See issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md.
-    syscall(1, _sk_stderr_fd, buf, len);
-    #else
     syscall(_SK_SYS_WRITE, _sk_stderr_fd, buf, len);
-    #endif
     return 0;
 }
 
@@ -57,11 +48,7 @@ fn sakshi_output_file(path): i64 {
 # Close the file output target, revert to stderr
 fn sakshi_output_file_close(): i64 {
     if (_sk_file_fd >= 0) {
-        #ifdef CYRIUS_TARGET_WIN
-        syscall(3, _sk_file_fd);                  # literal → CloseHandle on PE
-        #else
         syscall(_SK_SYS_CLOSE, _sk_file_fd);
-        #endif
         _sk_file_fd = 0 - 1;
     }
     _sk_output_target = SK_OUT_STDERR;
@@ -70,11 +57,7 @@ fn sakshi_output_file_close(): i64 {
 
 fn _sk_write_file(buf, len): i64 {
     if (_sk_file_fd >= 0) {
-        #ifdef CYRIUS_TARGET_WIN
-        syscall(1, _sk_file_fd, buf, len);        # literal → WriteFile on PE
-        #else
         syscall(_SK_SYS_WRITE, _sk_file_fd, buf, len);
-        #endif
     }
     return 0;
 }

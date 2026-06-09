@@ -41,18 +41,10 @@ var _SK_AT_FDCWD          = 0 - 100;
 # aarch64 calls `openat(AT_FDCWD, path, flags, mode)`. Returns fd or
 # negative errno.
 fn _sk_open(path, flags, mode): i64 {
-    #ifdef CYRIUS_TARGET_WIN
-    # cycc_win predefines CYRIUS_ARCH_X86 too, so this branch must take
-    # precedence: the var-slot `_SK_SYS_OPEN` doesn't constant-fold and the PE
-    # CreateFileW reroute only fires for a literal `2`. Linux-shaped `flags`
-    # (O_WRONLY|O_CREAT|O_APPEND = 1089) are decomposed inside the reroute.
-    return syscall(2, path, flags, mode);
-    #else
     #ifdef CYRIUS_ARCH_X86
     return syscall(_SK_SYS_OPEN, path, flags, mode);
     #endif
     #ifdef CYRIUS_ARCH_AARCH64
     return syscall(_SK_SYS_OPENAT, _SK_AT_FDCWD, path, flags, mode);
-    #endif
     #endif
 }

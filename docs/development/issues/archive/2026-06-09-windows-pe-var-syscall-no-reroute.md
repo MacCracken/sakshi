@@ -1,11 +1,11 @@
-# Windows / PE target: all sakshi output silently dropped — `var` syscall numbers defeat the cyrius PE reroute — FULLY RESOLVED (v2.2.8 / cyrius 6.1.16)
+# Windows / PE target: all sakshi output silently dropped — `var` syscall numbers defeat the cyrius PE reroute — FULLY RESOLVED (v2.2.7 / cyrius 6.1.16)
 
 **Filed:** 2026-06-09
 **Reporter:** ai-hwaccel v2.3.9 (first sakshi consumer to ship a Windows PE binary).
 **Cyrius version at time of report:** 6.1.15 (`cycc_win`).
 **Affected sakshi source:** `src/syscalls.cyr`, `src/output.cyr`, `src/clock.cyr` (everything that emits I/O).
 **Severity:** **P1.** sakshi produces a clean-looking PE binary that logs **nothing** — no fault, exit 0, zero bytes on stderr/file/UDP. Silent total feature loss on a tier-1 target, and it is the *portable* arch-dispatch idiom (v2.2.2) that triggers it.
-**Status:** **fully resolved (v2.2.8 / cyrius 6.1.16).** Resolved sakshi-side in v2.2.7 — the "sakshi stopgap" below shipped (`#ifdef CYRIUS_TARGET_WIN` literal-syscall branches + busy-spin clock calibration), and a `build-windows` CI lane now runs the PE smoke under wine and asserts the log line reaches stderr. **Upstream now closed too:** cyrius **6.1.16** emits a runtime dispatch (`cmp`/`jne` switch on the syscall number) for non-literal PE syscall numbers — the clean fix — and ships the previously-missing `cycc_win` in the x86_64 release tarball (the actual CI blocker for a pinned install). sakshi re-pinned 6.1.15 → 6.1.16 in v2.2.8; the per-call-site stopgap is retained (redundant but harmless) and retiring it is a separate follow-up.
+**Status:** **fully resolved (v2.2.7 / cyrius 6.1.16) — clean fix, no sakshi-side stopgap.** During development a sakshi-side stopgap was prototyped (`#ifdef CYRIUS_TARGET_WIN` literal-syscall branches), but it was **retired before v2.2.7 shipped** once cyrius **6.1.16** landed: 6.1.16 emits a runtime dispatch (`cmp`/`jne` switch on the syscall number) for non-literal PE syscall numbers — the clean fix that makes sakshi's portable `var`-slot idiom route on PE — and ships the previously-missing `cycc_win` in the x86_64 release tarball (the actual CI blocker for a pinned install). v2.2.7 therefore pins 6.0.52 → 6.1.16 and carries **no per-call-site syscall workaround**; the only remaining Windows-specific code is one `src/clock.cyr` `#ifdef` for `nanosleep` (35), the single sakshi syscall 6.1.16 still does not route on PE (it returns `-38`) — that path sources timestamps from `GetTickCount64` rather than the rdtsc calibration window. A `build-windows` CI lane runs the PE smoke under wine and asserts the log line reaches stderr.
 
 ## Summary
 

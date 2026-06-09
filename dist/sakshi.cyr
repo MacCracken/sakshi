@@ -1,5 +1,5 @@
 # sakshi.cyr — tracing, error handling, and structured logging for Cyrius
-# Bundled distribution of sakshi v2.2.8
+# Bundled distribution of sakshi v2.2.7
 # Source: https://github.com/MacCracken/sakshi
 # License: GPL-3.0-only
 #
@@ -61,19 +61,11 @@ var _SK_AT_FDCWD          = 0 - 100;
 # aarch64 calls `openat(AT_FDCWD, path, flags, mode)`. Returns fd or
 # negative errno.
 fn _sk_open(path, flags, mode): i64 {
-    #ifdef CYRIUS_TARGET_WIN
-    # cycc_win predefines CYRIUS_ARCH_X86 too, so this branch must take
-    # precedence: the var-slot `_SK_SYS_OPEN` doesn't constant-fold and the PE
-    # CreateFileW reroute only fires for a literal `2`. Linux-shaped `flags`
-    # (O_WRONLY|O_CREAT|O_APPEND = 1089) are decomposed inside the reroute.
-    return syscall(2, path, flags, mode);
-    #else
     #ifdef CYRIUS_ARCH_X86
     return syscall(_SK_SYS_OPEN, path, flags, mode);
     #endif
     #ifdef CYRIUS_ARCH_AARCH64
     return syscall(_SK_SYS_OPENAT, _SK_AT_FDCWD, path, flags, mode);
-    #endif
     #endif
 }
 
@@ -164,15 +156,8 @@ fn _sk_cpuid_invariant_tsc(): i64 {
 
 # Write to fd 2 and exit. Used for the invariant-TSC-absent panic.
 fn _sk_clock_panic(msg, len): i64 {
-    #ifdef CYRIUS_TARGET_WIN
-    # Literal numbers so the PE reroute fires (WriteFile / ExitProcess);
-    # the var slots used on Linux don't constant-fold on PE.
-    syscall(1, 2, msg, len);
-    syscall(60, 1);
-    #else
     syscall(_SK_SYS_WRITE, 2, msg, len);
     syscall(_SK_SYS_EXIT, 1);
-    #endif
     return 0;
 }
 
@@ -181,14 +166,7 @@ fn _sk_clock_panic(msg, len): i64 {
 # anchor is in the same time base as a non-cycle-counter implementation.
 fn _sk_clock_now_ns_raw(): i64 {
     var ts[2];
-    #ifdef CYRIUS_TARGET_WIN
-    # clock_gettime (228) IS in the PE reroute whitelist, but only as a
-    # compile-time-literal — the var slot `_SK_SYS_CLOCK_GETTIME` wouldn't
-    # fold. The reroute presents a Linux-shaped {tv_sec, tv_nsec} timespec.
-    var ret = syscall(228, 4, &ts);
-    #else
     var ret = syscall(_SK_SYS_CLOCK_GETTIME, 4, &ts);
-    #endif
     if (ret < 0) { return 0; }
     return load64(&ts) * 1000000000 + load64(&ts + 8);
 }
@@ -208,9 +186,10 @@ fn _sk_clock_init(): i64 {
     var t0_ticks = _sk_now_ticks();
 
     #ifdef CYRIUS_TARGET_WIN
-    # PE: nanosleep (35) is NOT in the syscall reroute whitelist, so the
-    # Linux 10 ms sleep window is unavailable. Busy-spin on the routed
-    # (literal) clock_gettime until ~10 ms of wall time has elapsed. The
+    # PE: nanosleep (35) is the one syscall sakshi uses that 6.1.16's runtime
+    # var-dispatch still does NOT route (it returns -38 / -ENOSYS on PE), so
+    # the Linux 10 ms sleep window is unavailable. Busy-spin on the
+    # (now var-dispatched) clock_gettime until ~10 ms of wall time has elapsed. The
     # spin is bounded so a degenerate clock source can never hang init —
     # if the bound trips, dn stays ~0 below and freq is left uncalibrated
     # (timestamps degrade to 0 rather than the process spinning forever).
@@ -265,12 +244,13 @@ fn _sk_clock_init(): i64 {
 # computation and event ordering are unaffected.
 fn _sk_now_ns(): i64 {
     #ifdef CYRIUS_TARGET_WIN
-    # Windows PE: the TSC calibration path uses nanosleep(35) + clock_gettime
-    # via the `var`-held _SK_SYS_* numbers, neither of which reroutes on PE
-    # (the PE syscall reroute only fires for a compile-time-LITERAL number —
-    # see issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md). Use the
-    # literal `syscall(228, …)` reroute → GetTickCount64() (ms in rax) and
-    # scale to ns. Coarse (ms) but monotonic, calibration-free, and crash-free.
+    # Windows PE: the rdtsc calibration window needs a sleep, but nanosleep(35)
+    # is the one syscall 6.1.16's runtime var-dispatch still doesn't route on PE
+    # (returns -38 — see issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md).
+    # Sidestep calibration entirely: syscall(228, 0, 0) reroutes to
+    # GetTickCount64() (ms in rax); scale to ns. Coarse (ms) but monotonic,
+    # calibration-free, and crash-free. (All other sakshi syscalls now use the
+    # portable `var`-slot numbers — 6.1.16 dispatches them at runtime on PE.)
     return syscall(228, 0, 0) * 1000000;
     #endif
     #ifndef CYRIUS_TARGET_WIN
@@ -536,16 +516,7 @@ var _sk_output_target = SK_OUT_STDERR;
 var _sk_stderr_fd = 2;
 
 fn _sk_write_stderr(buf, len): i64 {
-    #ifdef CYRIUS_TARGET_WIN
-    # The Win64 PE syscall reroute (→ GetStdHandle+WriteFile) only fires for a
-    # compile-time-LITERAL number; the v2.2.2 var-slot `_SK_SYS_WRITE` does not
-    # constant-fold, so on PE it falls through to a raw, non-functional syscall
-    # and emits nothing. Literal `1` keeps the reroute alive on Windows.
-    # See issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md.
-    syscall(1, _sk_stderr_fd, buf, len);
-    #else
     syscall(_SK_SYS_WRITE, _sk_stderr_fd, buf, len);
-    #endif
     return 0;
 }
 
@@ -569,11 +540,7 @@ fn sakshi_output_file(path): i64 {
 # Close the file output target, revert to stderr
 fn sakshi_output_file_close(): i64 {
     if (_sk_file_fd >= 0) {
-        #ifdef CYRIUS_TARGET_WIN
-        syscall(3, _sk_file_fd);                  # literal → CloseHandle on PE
-        #else
         syscall(_SK_SYS_CLOSE, _sk_file_fd);
-        #endif
         _sk_file_fd = 0 - 1;
     }
     _sk_output_target = SK_OUT_STDERR;
@@ -582,11 +549,7 @@ fn sakshi_output_file_close(): i64 {
 
 fn _sk_write_file(buf, len): i64 {
     if (_sk_file_fd >= 0) {
-        #ifdef CYRIUS_TARGET_WIN
-        syscall(1, _sk_file_fd, buf, len);        # literal → WriteFile on PE
-        #else
         syscall(_SK_SYS_WRITE, _sk_file_fd, buf, len);
-        #endif
     }
     return 0;
 }

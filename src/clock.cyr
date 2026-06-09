@@ -83,15 +83,8 @@ fn _sk_cpuid_invariant_tsc(): i64 {
 
 # Write to fd 2 and exit. Used for the invariant-TSC-absent panic.
 fn _sk_clock_panic(msg, len): i64 {
-    #ifdef CYRIUS_TARGET_WIN
-    # Literal numbers so the PE reroute fires (WriteFile / ExitProcess);
-    # the var slots used on Linux don't constant-fold on PE.
-    syscall(1, 2, msg, len);
-    syscall(60, 1);
-    #else
     syscall(_SK_SYS_WRITE, 2, msg, len);
     syscall(_SK_SYS_EXIT, 1);
-    #endif
     return 0;
 }
 
@@ -100,14 +93,7 @@ fn _sk_clock_panic(msg, len): i64 {
 # anchor is in the same time base as a non-cycle-counter implementation.
 fn _sk_clock_now_ns_raw(): i64 {
     var ts[2];
-    #ifdef CYRIUS_TARGET_WIN
-    # clock_gettime (228) IS in the PE reroute whitelist, but only as a
-    # compile-time-literal — the var slot `_SK_SYS_CLOCK_GETTIME` wouldn't
-    # fold. The reroute presents a Linux-shaped {tv_sec, tv_nsec} timespec.
-    var ret = syscall(228, 4, &ts);
-    #else
     var ret = syscall(_SK_SYS_CLOCK_GETTIME, 4, &ts);
-    #endif
     if (ret < 0) { return 0; }
     return load64(&ts) * 1000000000 + load64(&ts + 8);
 }
@@ -127,9 +113,10 @@ fn _sk_clock_init(): i64 {
     var t0_ticks = _sk_now_ticks();
 
     #ifdef CYRIUS_TARGET_WIN
-    # PE: nanosleep (35) is NOT in the syscall reroute whitelist, so the
-    # Linux 10 ms sleep window is unavailable. Busy-spin on the routed
-    # (literal) clock_gettime until ~10 ms of wall time has elapsed. The
+    # PE: nanosleep (35) is the one syscall sakshi uses that 6.1.16's runtime
+    # var-dispatch still does NOT route (it returns -38 / -ENOSYS on PE), so
+    # the Linux 10 ms sleep window is unavailable. Busy-spin on the
+    # (now var-dispatched) clock_gettime until ~10 ms of wall time has elapsed. The
     # spin is bounded so a degenerate clock source can never hang init —
     # if the bound trips, dn stays ~0 below and freq is left uncalibrated
     # (timestamps degrade to 0 rather than the process spinning forever).
@@ -184,12 +171,13 @@ fn _sk_clock_init(): i64 {
 # computation and event ordering are unaffected.
 fn _sk_now_ns(): i64 {
     #ifdef CYRIUS_TARGET_WIN
-    # Windows PE: the TSC calibration path uses nanosleep(35) + clock_gettime
-    # via the `var`-held _SK_SYS_* numbers, neither of which reroutes on PE
-    # (the PE syscall reroute only fires for a compile-time-LITERAL number —
-    # see issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md). Use the
-    # literal `syscall(228, …)` reroute → GetTickCount64() (ms in rax) and
-    # scale to ns. Coarse (ms) but monotonic, calibration-free, and crash-free.
+    # Windows PE: the rdtsc calibration window needs a sleep, but nanosleep(35)
+    # is the one syscall 6.1.16's runtime var-dispatch still doesn't route on PE
+    # (returns -38 — see issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md).
+    # Sidestep calibration entirely: syscall(228, 0, 0) reroutes to
+    # GetTickCount64() (ms in rax); scale to ns. Coarse (ms) but monotonic,
+    # calibration-free, and crash-free. (All other sakshi syscalls now use the
+    # portable `var`-slot numbers — 6.1.16 dispatches them at runtime on PE.)
     return syscall(228, 0, 0) * 1000000;
     #endif
     #ifndef CYRIUS_TARGET_WIN
