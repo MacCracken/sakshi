@@ -3,17 +3,29 @@
 # Zero heap allocation.
 # Depends: format.cyr, output.cyr (included via lib.cyr)
 #
-# Compile-time level elimination (v2.1.0, roadmap #1 workaround):
-# Define any of SAKSHI_DISABLE_FATAL / _ERROR / _WARN / _INFO / _DEBUG /
-# _TRACE via `cyrius build -D SAKSHI_DISABLE_<LEVEL>` (or the cyml
-# `defines` array) to drop that level's emit path at compile time.
-# The public fn stays defined (source compat); its body becomes an
-# early return. `#if <expr>` for numeric thresholds is not yet in the
-# preprocessor — discrete per-level flags are the available primitive.
+# Compile-time level elimination (roadmap #1). Two complementary knobs —
+# both drop the emit path at compile time, so the level costs zero bytes and
+# zero cycles (not just a runtime skip). The public fn stays defined for
+# source compat; its body becomes a bare `return 0;`.
 #
-# v2.2.1: cyrius 5.7.48 evaluates user-macro `#ifdef` / `#ifndef` inside
-# fn bodies (verified via probe). Each level is now a single fn with the
-# guard around the `_sk_log` call — no more dual-define at outer scope.
+#   1. Threshold — `#define SAKSHI_LEVEL <0..5>` before including sakshi
+#      compiles out every level more verbose than it, in one knob. Numeric
+#      map (lower = higher severity): FATAL=0, ERROR=1, WARN=2, INFO=3,
+#      DEBUG=4, TRACE=5. e.g. `#define SAKSHI_LEVEL 3` keeps fatal..info and
+#      drops debug+trace. Defaults to 5 (everything in) via the #ifndef guard
+#      below, so runtime `sakshi_set_level` still does the filtering unless a
+#      consumer opts in. Set it in source, NOT via `-D`: `cyrius build -D NAME`
+#      carries presence only (no integer value), and the `#if NAME >= VALUE`
+#      directive this relies on needs a `#define NAME VALUE` (cyrius 2.1.0+).
+#      `fatal` has no threshold gate — it is always compiled in (only the
+#      explicit disable flag below can remove it).
+#   2. Per-level flags — `-D SAKSHI_DISABLE_<LEVEL>` (FATAL/ERROR/WARN/INFO/
+#      DEBUG/TRACE) drop one specific level regardless of the threshold (e.g.
+#      keep TRACE but silence a noisy DEBUG). A disable flag always wins.
+#
+# v2.2.1: cyrius 5.7.48 evaluates user-macro `#ifdef`/`#ifndef`/`#if` inside
+# fn bodies (verified via probe), so each level is a single fn with the guard
+# around its `_sk_log` call — no more dual-define at outer scope.
 
 # Log levels — lower value = higher severity
 enum LogLevel {
@@ -30,6 +42,14 @@ enum SpanAction {
     SK_SPAN_ENTER = 10;
     SK_SPAN_EXIT  = 11;
 }
+
+# Compile-time verbosity ceiling (see the header note). Default 5 (SK_TRACE):
+# every level compiled in. A consumer drops the more-verbose levels at compile
+# time with `#define SAKSHI_LEVEL <n>` before the sakshi include; this #ifndef
+# guard preserves their value rather than clobbering it back to the default.
+#ifndef SAKSHI_LEVEL
+#define SAKSHI_LEVEL 5
+#endif
 
 # Current log level — messages above this level are suppressed.
 var _sk_log_level = SK_INFO;
@@ -53,10 +73,13 @@ fn _sk_log(level, msg, msg_len): i64 {
 }
 
 # Public API — each takes a message string and its byte length.
-# When `SAKSHI_DISABLE_<LEVEL>` is defined the body's `_sk_log` call is
-# preprocessed out, leaving a bare `return 0;` stub.
+# Each body's `_sk_log` call is gated by both knobs (see header): the
+# `#ifndef SAKSHI_DISABLE_<LEVEL>` flag and the `#if SAKSHI_LEVEL >= <n>`
+# threshold. If either elides it, the body is a bare `return 0;` stub and
+# the call site costs nothing.
 
-# Log a fatal message (always emitted regardless of runtime level)
+# Log a fatal message (always emitted regardless of runtime level).
+# No threshold gate — fatal is always compiled in unless explicitly disabled.
 fn sakshi_fatal(msg, msg_len): i64 {
     #ifndef SAKSHI_DISABLE_FATAL
     _sk_log(SK_FATAL, msg, msg_len);
@@ -67,7 +90,9 @@ fn sakshi_fatal(msg, msg_len): i64 {
 # Log an error message to the configured output
 fn sakshi_error(msg, msg_len): i64 {
     #ifndef SAKSHI_DISABLE_ERROR
+    #if SAKSHI_LEVEL >= 1
     _sk_log(SK_ERROR, msg, msg_len);
+    #endif
     #endif
     return 0;
 }
@@ -75,7 +100,9 @@ fn sakshi_error(msg, msg_len): i64 {
 # Log a warning message
 fn sakshi_warn(msg, msg_len): i64 {
     #ifndef SAKSHI_DISABLE_WARN
+    #if SAKSHI_LEVEL >= 2
     _sk_log(SK_WARN, msg, msg_len);
+    #endif
     #endif
     return 0;
 }
@@ -83,7 +110,9 @@ fn sakshi_warn(msg, msg_len): i64 {
 # Log an info message
 fn sakshi_info(msg, msg_len): i64 {
     #ifndef SAKSHI_DISABLE_INFO
+    #if SAKSHI_LEVEL >= 3
     _sk_log(SK_INFO, msg, msg_len);
+    #endif
     #endif
     return 0;
 }
@@ -91,7 +120,9 @@ fn sakshi_info(msg, msg_len): i64 {
 # Log a debug message
 fn sakshi_debug(msg, msg_len): i64 {
     #ifndef SAKSHI_DISABLE_DEBUG
+    #if SAKSHI_LEVEL >= 4
     _sk_log(SK_DEBUG, msg, msg_len);
+    #endif
     #endif
     return 0;
 }
@@ -99,7 +130,9 @@ fn sakshi_debug(msg, msg_len): i64 {
 # Log a trace message
 fn sakshi_trace(msg, msg_len): i64 {
     #ifndef SAKSHI_DISABLE_TRACE
+    #if SAKSHI_LEVEL >= 5
     _sk_log(SK_TRACE, msg, msg_len);
+    #endif
     #endif
     return 0;
 }

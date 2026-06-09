@@ -1,0 +1,50 @@
+# Test: compile-time log-level threshold (roadmap #1).
+#
+# This unit is compiled with SAKSHI_LEVEL=3 (INFO), so the bodies of
+# sakshi_debug (4) and sakshi_trace (5) must be preprocessed OUT entirely.
+# The runtime level is forced to SK_TRACE (allows every level 0..5), so any
+# missing emission can ONLY be the compile-time `#if SAKSHI_LEVEL >= n` gate —
+# not the runtime `_sk_log` level filter. That isolation is the whole point.
+#
+# The `#define` must precede the sakshi include so trace.cyr's
+# `#ifndef SAKSHI_LEVEL` default guard keeps this value (instead of 5).
+#define SAKSHI_LEVEL 3
+
+include "lib/string.cyr"
+include "lib/fmt.cyr"
+include "lib/assert.cyr"
+include "lib/fnptr.cyr"
+
+include "src/lib.cyr"
+
+# Count every event that actually reaches the emit path.
+var lg_count: i64 = 0;
+fn _lg_count_hook(ts, level, category, msg, msg_len, elapsed_ns) {
+    lg_count = lg_count + 1;
+    return 0;
+}
+
+test_group("compile-time level threshold (SAKSHI_LEVEL=3)");
+
+sakshi_set_emit_hook(&_lg_count_hook);
+sakshi_set_level(SK_TRACE);          # runtime allows ALL levels 0..5
+
+# Levels at/under the threshold (error=1, warn=2, info=3) stay compiled in.
+sakshi_error("e", 1);
+sakshi_warn("w", 1);
+sakshi_info("i", 1);
+assert_eq(lg_count, 3, "error+warn+info kept at level 3");
+
+# Levels above the threshold (debug=4, trace=5) are compiled out — they must
+# add nothing even though the runtime level (TRACE) would otherwise allow them.
+sakshi_debug("d", 1);
+sakshi_trace("t", 1);
+assert_eq(lg_count, 3, "debug+trace compiled out despite runtime TRACE");
+
+# fatal has no threshold gate — always compiled in.
+sakshi_fatal("f", 1);
+assert_eq(lg_count, 4, "fatal always emitted regardless of threshold");
+
+sakshi_clear_emit_hook();
+
+var r = assert_summary();

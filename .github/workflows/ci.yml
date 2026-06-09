@@ -63,20 +63,22 @@ jobs:
         run: ./build/sakshi-smoke
 
       - name: Test
-        run: cyrius test tests/tcyr/sakshi.tcyr
+        # Auto-discover every tests/tcyr/*.tcyr (sakshi.tcyr + level_gate.tcyr,
+        # the latter compiled at SAKSHI_LEVEL=3 to prove compile-time level
+        # elimination). Matches scripts/test.sh.
+        run: cyrius test
 
       - name: Bench
         run: cyrius bench tests/bcyr/sakshi.bcyr
 
   build-aarch64:
-    name: Cross-build (aarch64)
-    # Compile-only lane — verifies sakshi's source is aarch64-portable
-    # (right syscall numbers, right inline asm). Runtime execution (qemu)
-    # is held off pending the cyrius stdlib `vec_get` / `vec_len`
-    # unresolved-symbol fix; the warnings the compiler emits about those
-    # ("will crash at runtime") are tolerable on x86 because the paths
-    # aren't reached, but on aarch64 they actually crash. Same posture
-    # as yukti's aarch64 lane (yukti/.github/workflows/ci.yml) — see
+    name: Cross-build + run (aarch64)
+    # Cross-build + RUN gate. Cross-builds the smoke for aarch64 and executes
+    # it under qemu-user, asserting a known log line reaches stderr — the
+    # aarch64 analog of the build-windows/wine gate. This lane was compile-only
+    # until cyrius 6.1.16 cleared the upstream stdlib bug (the aarch64 codegen
+    # path hit unresolved `vec_get` / `vec_len` and crashed the binary, exit
+    # 127); 6.1.16 builds clean and the static ELF runs under qemu. See
     # docs/development/issues/2026-04-30-cyrius-lang-blockers.md.
     runs-on: ubuntu-latest
     steps:
@@ -100,6 +102,11 @@ jobs:
             exit 1
           fi
 
+      - name: Install qemu-user (aarch64 runner)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user-static
+
       - name: Resolve dependencies
         run: cyrius deps
 
@@ -113,6 +120,22 @@ jobs:
           file build/sakshi-smoke-aarch64
           file build/sakshi-smoke-aarch64 | grep -q "ARM aarch64" || { echo "FAIL: not an aarch64 ELF"; exit 1; }
           echo "sakshi-smoke-aarch64: $(wc -c < build/sakshi-smoke-aarch64) bytes"
+
+      - name: Run under qemu — assert log reaches stderr
+        run: |
+          # Runtime gate (cyrius 6.1.16+): the static aarch64 ELF must actually
+          # run and emit. Pre-6.1.16 this crashed (exit 127) on the unresolved
+          # stdlib vec_get/vec_len path; this step is what proves it's fixed and
+          # guards against a regression. Mirrors the build-windows/wine assert.
+          out=$(qemu-aarch64-static build/sakshi-smoke-aarch64 2>&1 || true)
+          echo "----- aarch64 binary output -----"
+          echo "$out"
+          echo "---------------------------------"
+          echo "$out" | grep -q "sakshi smoke ok" || {
+            echo "::error::aarch64 binary emitted no 'sakshi smoke ok' line — runtime regression";
+            exit 1;
+          }
+          echo "aarch64 stderr logging reaches output ✓"
 
   build-windows:
     name: Cross-build + run (Windows PE)

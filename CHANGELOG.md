@@ -5,6 +5,52 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.8] - 2026-06-09
+
+### Added
+
+- **Compile-time log-level threshold (roadmap #1, now fully shipped).**
+  `#define SAKSHI_LEVEL <0..5>` before the sakshi include compiles out
+  every level more verbose than the threshold in a single knob — the level
+  costs zero bytes and zero cycles, not just a runtime skip. Numeric map
+  (lower = higher severity): FATAL=0, ERROR=1, WARN=2, INFO=3, DEBUG=4,
+  TRACE=5; e.g. `#define SAKSHI_LEVEL 3` keeps fatal..info and drops
+  debug+trace. Implemented with the `#if SAKSHI_LEVEL >= n` directive
+  (added to cyrius in 2.1.0 specifically for this), gated per level in
+  `src/trace.cyr` and defaulted to 5 via an `#ifndef` guard, so existing
+  consumers are unchanged (everything compiled in; runtime
+  `sakshi_set_level` still filters). `fatal` has no threshold gate — always
+  compiled in. Composes with the existing per-level `SAKSHI_DISABLE_<LEVEL>`
+  flags (a disable flag always wins). Set it in source, **not** via `-D`:
+  `cyrius build -D NAME` carries presence only (no integer value), and the
+  directive needs a `#define NAME VALUE`. Replaces the stale `trace.cyr`
+  note that claimed `#if` numeric thresholds were unavailable.
+- **`tests/tcyr/level_gate.tcyr`** — regression test compiled at
+  `SAKSHI_LEVEL=3` with the runtime level forced to `SK_TRACE`, so any
+  suppressed emission is provably compile-time (not the runtime filter).
+  Asserts error+warn+info emit, debug+trace are eliminated, and fatal
+  always emits. The CI `Test` step now auto-discovers all `tests/tcyr/*.tcyr`
+  (matching `scripts/test.sh`) so this runs in CI.
+
+### Changed
+
+- **aarch64 CI lane is now a cross-build + RUN gate.** cyrius 6.1.16
+  cleared the upstream stdlib bug that crashed aarch64 binaries (the
+  codegen path hit unresolved `vec_get` / `vec_len`, exit 127), which had
+  held this lane at compile-only. The `build-aarch64` job now installs
+  `qemu-user-static`, runs the cross-built static ELF under
+  `qemu-aarch64-static`, and asserts the `sakshi smoke ok` line reaches
+  stderr — the aarch64 analog of the live `build-windows`/wine gate.
+  Verified locally: the aarch64 build is clean (no arity/vec warnings) and
+  the binary runs under qemu, exit 0.
+- `dist/sakshi.cyr` regenerated via `scripts/bundle.sh` at v2.2.8.
+
+### Verified
+
+- `cyrius build` smoke green; **full suite 60/60** (`sakshi.tcyr` 57 +
+  `level_gate.tcyr` 3); bundle lint clean; PE binary still emits under
+  wine; aarch64 ELF runs under qemu.
+
 ## [2.2.7] - 2026-06-09
 
 ### Fixed

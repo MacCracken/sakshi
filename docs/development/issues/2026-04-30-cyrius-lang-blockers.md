@@ -1,6 +1,6 @@
 # Cyrius language blockers for sakshi
 
-**Audit point:** Cyrius 5.7.48 (sakshi v2.1.1 → v2.2.0 transition).
+**Audit point:** Cyrius 6.1.16 (sakshi v2.2.8).
 
 This is the canonical list of Cyrius language / stdlib features that sakshi roadmap items still need. Each row maps a sakshi roadmap item to the concrete upstream gap, the current workaround (if any), and severity from sakshi's perspective.
 
@@ -10,12 +10,13 @@ Re-audit and update this doc each time sakshi pins a new Cyrius release.
 
 | # | Sakshi roadmap item | Needed cyrius feature | Current workaround | Severity |
 |---|--------------------|----------------------|--------------------|----------|
-| 1 | Compile-time log level elimination (`docs/development/roadmap.md` row 1) | `#if <int-expr>` numeric thresholds in the preprocessor (e.g. `#if SAKSHI_LEVEL <= 3`) plus `-D NAME=VAL` macro values | Discrete `SAKSHI_DISABLE_FATAL`/`_ERROR`/`_WARN`/`_INFO`/`_DEBUG`/`_TRACE` defines, dual-defined at module scope (see severity note on `#ifdef` scope below). Shipped in v2.1.0. | **Low.** The workaround is acceptable and ergonomic enough; ROI on landing `#if <int-expr>` is small once consumers know the per-level flags. |
-| 2 | Deferred formatting (defmt-style: emit `(string_id, raw_args)` instead of formatted text) | Compiler-level string interning — `#strid "literal"` or equivalent, plus a linker-merged registry pass | None possible. The whole point of deferred formatting is that the format string never lives in the running binary; without compiler interning sakshi can't issue stable IDs. | **Medium.** Significant perf upside on the hot path (no formatting cost, smaller events on the wire) but only matters for high-volume tracing. |
+| 2 | Deferred formatting (defmt-style: emit `(string_id, raw_args)` instead of formatted text) | Compiler-level string interning — `#strid "literal"` or equivalent, plus a linker-merged registry pass | None possible. The whole point of deferred formatting is that the format string never lives in the running binary; without compiler interning sakshi can't issue stable IDs. (cyrius has `defmt`/interning since 4.8.3 — buildable but a larger lift.) | **Medium.** Significant perf upside on the hot path (no formatting cost, smaller events on the wire) but only matters for high-volume tracing. |
 | 3 | Per-module log levels | Module identity at compile time — `__FILE__`, `__MODULE__`, or a `#module NAME` directive that yields a stable per-translation-unit ID | None. A consumer-threaded `mod_id` constant per call site is an API change we don't want. | **Medium.** Most users handle module-level filtering at the consumer side; sakshi-native support would be nicer but isn't blocking adoption. |
 | 4 | Per-CPU ring buffers | `sched_getcpu` / `sched_setaffinity` / `getcpu` syscall wrappers in `lib/syscalls*.cyr`. Atomics shipped in 5.7.x — `lib/atomic.cyr` provides `atomic_load/store/cas/fetch_add/fence` for both x86_64 and aarch64. | None for per-CPU partitioning specifically. A global atomic ring is now buildable as an interim. | **Low.** Per-CPU is a perf optimization for multi-threaded high-volume tracing; sakshi is single-threaded by current contract anyway. The atomic-ring interim is the more valuable shorter-term step. |
 | 6 | Structured typed fields (key-value per event with type info) | Generics, templates, or comptime layout. Cyrius is monomorphic — `hashmap.cyr` and `hashmap_str_keys.cyr` exist as separate files because parametric types don't. | None at the language level. Pragmatic alternative inside sakshi: define a fixed-shape schema struct that consumers populate and pass through the v2.1.0 emit hook. | **High effort upstream, medium value to sakshi.** A type-system extension is a large compiler project. The hook-based escape hatch already covers most of the use case. |
-| 7 | **Windows / PE output** (`docs/development/roadmap.md` Windows lane W1/W2) | PE syscall reroute must fire for a **non-literal** syscall number — runtime dispatch on `rax` under `_TARGET_PE` (today only a compile-time-literal number reroutes). Plus routing for `nanosleep`(35) if PE TSC calibration is to keep the nanosleep path. Upstream: [`cyrius .../2026-06-09-pe-syscall-variable-number-not-rerouted.md`](https://github.com/MacCracken/cyrius/blob/main/docs/development/issues/2026-06-09-pe-syscall-variable-number-not-rerouted.md). | **sakshi-side stopgap SHIPPED v2.2.7**: `#ifdef CYRIUS_TARGET_WIN` literal-syscall branches in `src/output.cyr` + `src/syscalls.cyr` (`_sk_open`), and a bounded busy-spin on literal `clock_gettime`(228) replacing the unrouted `nanosleep`(35) calibration in `src/clock.cyr` (default stderr path needs only literal `write(1)` + `clock_gettime(228)`, both routed). PE smoke now verified under wine in CI (`build-windows`). Detail: [`archive/2026-06-09-windows-pe-var-syscall-no-reroute.md`](archive/2026-06-09-windows-pe-var-syscall-no-reroute.md). | **Resolved sakshi-side (v2.2.7); upstream still open.** The *clean* fix — PE runtime-dispatch of non-literal syscall numbers — removes the per-call-site literal workaround and lets the portable `var`-dispatch idiom just work. Until then the v2.2.7 stopgap holds. |
+
+(Item 1, compile-time log-level elimination, shipped in v2.2.8 — see Cleared.
+Item 7, Windows / PE output, cleared in 6.1.16 — see Cleared.)
 
 ## Open silent-failure quirks (worth filing as bugs upstream)
 
@@ -35,37 +36,22 @@ Scope confirmed during sakshi v2.1.0 hook implementation: bug is limited to stor
 
 Sakshi-side mitigation: keep all sakshi inline asm in the local-store pattern. If a future feature genuinely needs caller-pointer stores, gate the file behind a fix-version pin and document it inline.
 
-### `cc5_aarch64` moved to tarball top-level in 5.7.48 (CI install workaround)
+### Cross-backend binary packaging (`cycc_aarch64` / `cycc_win`) — resolved via `install.sh`
 
-5.7.48's `cyrius-5.7.48-x86_64-linux.tar.gz` ships `cc5_aarch64` at the **tarball top level** rather than under `bin/`. Any CI that copies `…/bin/*` to `~/.cyrius/bin/` (the pattern shipped in earlier sakshi/yukti/patra workflows) silently drops it; first aarch64 cross-build then fails with:
+Historically (cyrius 5.7.x, when the binary was named `cc5_aarch64`) the aarch64 cross-backend shipped at the **tarball top level** rather than under `bin/`, so CI that copied only `…/bin/*` to `~/.cyrius/bin/` silently dropped it and the first aarch64 cross-build failed. Cyrius 6.0 renamed the binary to `cycc_aarch64`.
 
-```
-error: compiler not found: /home/runner/.cyrius/bin/cc5_aarch64
-```
+Resolved sakshi-side: both `ci.yml` and `release.yml` now bootstrap the toolchain with the upstream `install.sh`, which lays out `$HOME/.cyrius/{bin,lib}` (including `cycc_aarch64`) correctly — no manual `cp` of cross-backends — plus an explicit `Verify cycc_aarch64 present` gate that fails the run early if the install is incomplete. The same `cycc_win` packaging gap (PE cross-compiler missing from x86_64 tarballs since cyrius 6.0.50) was the CI blocker fixed upstream in **6.1.16** and is guarded the same way (`Verify cycc_win present`).
 
-Sakshi-side mitigation (applied in v2.2.2 to both `ci.yml` and `release.yml`): one extra line after the `bin/*` copy —
-```
-[ -f "$CYRIUS_DIR/cc5_aarch64" ] && cp "$CYRIUS_DIR/cc5_aarch64" "$HOME/.cyrius/bin/"
-```
+### Residual `vec_get` / `vec_len` warning on x86 builds (harmless)
 
-Same workaround as `yukti/.github/workflows/ci.yml`. Yukti has the canonical upstream report at [`yukti/docs/development/issues/2026-04-30-cyrius-cc5-aarch64-packaging.md`](https://github.com/MacCracken/yukti/blob/main/docs/development/issues/2026-04-30-cyrius-cc5-aarch64-packaging.md). Upstream fix lands when `install.sh` or a future tarball moves `cc5_aarch64` back under `bin/`.
+`cyrius build` (x86_64) still prints `warning: undefined function 'vec_get' / 'vec_len'` — stdlib paths reference functions not pulled into the bundle. These sit in DCE-eligible code never reached at runtime, so the binary works (confirmed: smoke + 57/57 tests green). Cosmetic only. The earlier, far noisier aarch64 form of this (10 arity-mismatch warnings + an aarch64-codegen path that actually hit `vec_get`/`vec_len` and crashed the binary) **cleared in cyrius 6.1.16** — see Cleared below.
 
-### Stdlib `--aarch64` cross-build noise (arity + unresolved vec_get/vec_len)
+## Cleared
 
-5.7.48 emits two classes of upstream noise on every `cyrius build --aarch64 …` invocation, regardless of project content:
-
-1. **10 `warning: syscall arity mismatch` lines** at fixed line numbers (372, 377, 382, 394, 399, 463, 547, 610, 617, 683) in the bundled compilation unit. Reproduced with a 7-line trivial file. Line numbers track to cyrius stdlib code, not project source. Treated as compile-time noise.
-2. **`error: undefined function 'vec_get' / 'vec_len' (will crash at runtime)`.** Same root cause — stdlib paths reference functions that aren't pulled into the bundle. On x86 these references sit in DCE-eligible code that's never reached at runtime, so the binary works. On aarch64, the codegen path actually hits them and the binary crashes (exit 127 from the test framework / qemu).
-
-Sakshi-side mitigation: the v2.2.2 `src/syscalls.cyr` arch-dispatch + `_sk_open` wrapper makes sakshi's own syscalls portable. v2.2.2 originally added a qemu-execution lane to validate end-to-end on aarch64, but the unresolved `vec_get`/`vec_len` blocks that today. The CI lane was downgraded to **cross-build + ELF verification only** — same posture as `yukti/.github/workflows/ci.yml` (yukti has hit this and chose the same compile-only lane).
-
-Runtime aarch64 verification will reattempt as a sakshi patch once the stdlib bug is upstream-fixed. Track upstream — same fix likely closes both the arity warnings and the unresolved-vec issue, since they're both stdlib-bundling problems.
-
-Suggested cyrius-side fix: ensure stdlib auto-deps that get bundled into cross-arch builds resolve all referenced symbols (or DCE them to elimination); silence the arity warnings on stdlib-internal syscall sites.
-
-## Cleared since last audit (5.5.11 → 5.7.48)
-
-- **Atomics shipped** — `lib/atomic.cyr` is now in stdlib (`atomic_load`, `atomic_store`, `atomic_cas`, `atomic_fetch_add`, `atomic_fence`) on x86_64 + aarch64. Was listed as a 5.5.x-pillar item; cleared. Half-unblocks roadmap #4.
+- **Windows / PE output (item 7) — cleared in cyrius 6.1.16.** 6.1.16 emits a runtime `cmp`/`jne` dispatch for **non-literal** PE syscall numbers over the Windows-routable POSIX calls (read/write/open/close/lseek/mmap/exit/mkdir/unlink/clock_gettime), so sakshi's portable `var`-slot idiom routes on PE with no per-call-site workaround — and it ships the previously-missing `cycc_win` in the x86_64 tarball (the CI blocker). sakshi v2.2.7 pins 6.1.16 and carries **no syscall stopgap** (the prototyped `#ifdef CYRIUS_TARGET_WIN` literal branches were retired before v2.2.7 shipped). One Windows-specific path remains in `src/clock.cyr`: `nanosleep`(35) is the single sakshi syscall 6.1.16 still does not route on PE (returns `-38`), so the rdtsc calibration window is skipped and timestamps come from `GetTickCount64`. PE smoke verified under wine in CI (`build-windows`). Detail: [`archive/2026-06-09-windows-pe-var-syscall-no-reroute.md`](archive/2026-06-09-windows-pe-var-syscall-no-reroute.md).
+- **Compile-time log-level elimination (item 1) — shipped in v2.2.8.** The `#if NAME >= VALUE` directive (added to cyrius in 2.1.0 *for sakshi* — the changelog example is `#if sk_cfg_log_level >= 3`) backs a `#define SAKSHI_LEVEL <0..5>` threshold gated per level in `src/trace.cyr`, defaulted to 5 via `#ifndef`. A consumer drops every more-verbose level at compile time in one knob (zero bytes/cycles), composing with the existing per-level `SAKSHI_DISABLE_<LEVEL>` flags. Caveat captured in source: set it via in-source `#define`, not `-D` (`cyrius build -D NAME` carries presence only, no integer value). Regression test: `tests/tcyr/level_gate.tcyr`.
+- **aarch64 cross-build noise — cleared in cyrius 6.1.16; runtime CI live in v2.2.8.** The 10 stdlib `syscall arity mismatch` warnings and the aarch64-codegen `vec_get`/`vec_len` references (which crashed the aarch64 binary, exit 127 — the reason the qemu runtime CI lane was held) are all gone on 6.1.16: `cyrius build --aarch64` is clean (no arity warnings, no vec refs), and the resulting static ELF **runs under `qemu-aarch64`** — smoke emits all lines, exit 0. The `build-aarch64` CI lane is now a cross-build + RUN gate (installs `qemu-user-static`, runs the binary, asserts the log line) — the aarch64 analog of the live wine lane. A harmless `vec_get`/`vec_len` warning remains on x86 only — see the residual quirk above.
+- **Atomics shipped (cyrius 5.7.x)** — `lib/atomic.cyr` is now in stdlib (`atomic_load`, `atomic_store`, `atomic_cas`, `atomic_fetch_add`, `atomic_fence`) on x86_64 + aarch64. Was listed as a 5.5.x-pillar item; cleared. Half-unblocks item #4 (atomic ring lands in v2.3.0).
 
 ## Process
 
