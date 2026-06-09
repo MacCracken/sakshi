@@ -5,7 +5,21 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.2.8] - 2026-06-09
+## [2.2.9] - Unreleased
+
+### Fixed
+
+- **`calibrate()` nanosleep timespec was undersized (roadmap P3).** The
+  10 ms TSC-calibration window in `src/clock.cyr` declared its `timespec`
+  as `var sleep_ts[2]`. Cyrius `var[N]` is **byte-sized** (rounded up to
+  8), so `[2]` reserved only 8 bytes — the `tv_nsec` store at `+8`
+  (`store64(&sleep_ts + 8, 10000000)`) landed in the *next* stack local.
+  It happened to work because that store and the kernel's `nanosleep` read
+  hit the same `+8` address and the adjacent slot was unused, but it was
+  layout-fragile: a reordered local or future codegen change could corrupt
+  it. Fixed to `var sleep_ts[16]` (two i64), so `tv_sec`/`tv_nsec` occupy
+  dedicated storage. Latent on current builds — no observable behavior
+  change; this is a robustness fix.
 
 ### Added
 
