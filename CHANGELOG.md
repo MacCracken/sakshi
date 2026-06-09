@@ -5,7 +5,32 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.2.9] - Unreleased
+## [2.2.10] - Unreleased
+
+### Changed
+
+- **`src/clock.cyr` is now single-path across all targets — the Windows PE
+  special-casing is gone.** Two `#ifdef CYRIUS_TARGET_WIN` branches existed
+  solely because `nanosleep(35)` returned `-ENOSYS` on PE before cyrius
+  6.1.17: (1) `_sk_clock_init` used a bounded `clock_gettime` busy-spin
+  instead of the portable nanosleep calibration window, and (2) `_sk_now_ns`
+  sidestepped TSC calibration entirely, sourcing coarse millisecond
+  timestamps from `GetTickCount64` (`syscall(228, 0, 0)`). With the 6.1.17
+  pin now in place — it routes `nanosleep(35)` to `Sleep` on PE — both
+  branches are removed: Linux, aarch64, AGNOS, macOS, **and Windows PE** now
+  share the exact same calibrated-rdtsc path. **Windows behavior change:**
+  timestamps go from `GetTickCount64` millisecond granularity to
+  full rdtsc nanosecond resolution (same `_sk_ticks_to_ns` Q32 scale as
+  every other target). Verified: PE smoke cross-built with `cyrius build
+  --win` compiles clean (the 6.1.17 PE syscall-routing list covers both
+  `35` and `228`) and the Linux suite stays 57/57.
+- **Requires cyrius ≥ 6.1.17** (pin unchanged from v2.2.9's 6.1.17). The
+  unified clock path depends on PE `nanosleep(35)` routing to `Sleep`, which
+  6.1.17 introduced — building this release against an older toolchain would
+  reinstate the `-ENOSYS` PE sleep failure the removed branches guarded.
+- `dist/sakshi.cyr` regenerated via `scripts/bundle.sh` at v2.2.10.
+
+## [2.2.9] - 2026-06-09
 
 ### Fixed
 
@@ -20,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. Fixed to `var sleep_ts[16]` (two i64), so `tv_sec`/`tv_nsec` occupy
   dedicated storage. Latent on current builds — no observable behavior
   change; this is a robustness fix.
+
+### Changed
+
+- **`cyrius` pin bumped 6.1.16 → 6.1.17.** 6.1.17 routes `nanosleep(35)`
+  to `Sleep` on Windows PE (the last sakshi syscall PE var-dispatch did not
+  cover), clearing the toolchain-drift warning and unblocking the v2.2.10
+  clock-path unification. No source changes in this release beyond the pin
+  and the timespec fix above.
+- `dist/sakshi.cyr` regenerated via `scripts/bundle.sh` at v2.2.9.
+
+## [2.2.8] - 2026-06-09
 
 ### Added
 

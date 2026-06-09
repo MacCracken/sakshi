@@ -1,6 +1,6 @@
 # Sakshi Development Roadmap
 
-> **Current: v2.2.9** (pin: cyrius 6.1.17). Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source; the `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.2.0 public API is stable.
+> **Current: v2.2.10** (pin: cyrius 6.1.17). Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source — as of v2.2.10 even `src/clock.cyr` has no `#ifdef CYRIUS_TARGET_WIN` branch (PE now shares the calibrated-rdtsc timestamp path). The `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.2.0 public API is stable.
 >
 > Shipped history lives in [`CHANGELOG.md`](../../CHANGELOG.md). This file tracks only what's ahead.
 
@@ -37,8 +37,6 @@ Item #1 (compile-time log-level elimination) **shipped in v2.2.8** via the `#if 
 
 ## Cleanup / hardening — no firm version
 
-| Pri | Item | Notes |
-|-----|------|-------|
-| **P3** | **Drop the Windows busy-spin in `calibrate()`** (`src/clock.cyr`) | The 6.1.17 pin is now in place (PE `nanosleep(35)` routes to `Sleep`), so the `#ifdef CYRIUS_TARGET_WIN` busy-spin calibration window can be dropped for the portable `syscall(_SK_SYS_NANOSLEEP, &sleep_ts, 0)` path the Linux lane already uses. Holding on the `build-windows` (wine) CI fix before flipping the path — verify the PE smoke still asserts output reaches stderr under the var-dispatched sleep. |
-
-> **Done in v2.2.9:** `calibrate()` nanosleep timespec was undersized (`var sleep_ts[2]` → `var sleep_ts[16]`). Cyrius `var[N]` is byte-sized, so `[2]` reserved only 8 bytes and the `tv_nsec` store at +8 landed in the next stack local — layout-fragile though not observable. See CHANGELOG.
+_None open._ The clock-path items (timespec sizing in v2.2.9; Windows
+busy-spin + `GetTickCount64` removal in v2.2.10) are shipped — see
+[`CHANGELOG.md`](../../CHANGELOG.md).
