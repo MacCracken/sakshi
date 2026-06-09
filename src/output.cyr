@@ -29,7 +29,7 @@ fn _sk_write_stderr(buf, len): i64 {
     # compile-time-LITERAL number; the v2.2.2 var-slot `_SK_SYS_WRITE` does not
     # constant-fold, so on PE it falls through to a raw, non-functional syscall
     # and emits nothing. Literal `1` keeps the reroute alive on Windows.
-    # See issues/2026-06-09-windows-pe-var-syscall-no-reroute.md.
+    # See issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md.
     syscall(1, _sk_stderr_fd, buf, len);
     #else
     syscall(_SK_SYS_WRITE, _sk_stderr_fd, buf, len);
@@ -236,7 +236,7 @@ fn sakshi_ring_decode_event(buf, buf_len, dst, dst_cap, out_text_len): i64 {
 # NOT SUPPORTED ON WINDOWS (PE). `socket` (41) and `sendto` (44) are not in
 # the Win64 PE syscall reroute whitelist, so SK_OUT_UDP emits nothing on a
 # PE target. Windows consumers must use the stderr or file target (both
-# routed). Tracked in issues/2026-06-09-windows-pe-var-syscall-no-reroute.md.
+# routed). Tracked in issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md.
 var _sk_udp_fd: i64 = 0 - 1;
 
 # sockaddr_in: { sin_family: u16, sin_port: u16, sin_addr: u32, zero: u64 } = 16 bytes

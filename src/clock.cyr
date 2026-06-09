@@ -187,7 +187,7 @@ fn _sk_now_ns(): i64 {
     # Windows PE: the TSC calibration path uses nanosleep(35) + clock_gettime
     # via the `var`-held _SK_SYS_* numbers, neither of which reroutes on PE
     # (the PE syscall reroute only fires for a compile-time-LITERAL number —
-    # see issues/2026-06-09-windows-pe-var-syscall-no-reroute.md). Use the
+    # see issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md). Use the
     # literal `syscall(228, …)` reroute → GetTickCount64() (ms in rax) and
     # scale to ns. Coarse (ms) but monotonic, calibration-free, and crash-free.
     return syscall(228, 0, 0) * 1000000;

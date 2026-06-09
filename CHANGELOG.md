@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aarch64 / AGNOS / macOS `var`-dispatch paths are unchanged (guarded
   out on PE). Verified: PE binary cross-built with `cycc_win` emits its
   log line under wine (was zero bytes before the fix). Full write-up:
-  [`issues/2026-06-09-windows-pe-var-syscall-no-reroute.md`](docs/development/issues/2026-06-09-windows-pe-var-syscall-no-reroute.md).
+  [`issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md`](docs/development/issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md).
   The *clean* fix remains upstream runtime-dispatch of non-literal PE
   syscall numbers; this is the sakshi-side stopgap.
 

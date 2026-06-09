@@ -50,7 +50,7 @@ Why minor (not patch): adds a new public output target and ring-reader API surfa
 
 ## Windows / PE support — **P1** (closed, v2.2.7)
 
-First sakshi consumer to ship a Windows PE binary (ai-hwaccel 2.3.9) found that **all sakshi output was silently dropped on Windows**: the v2.2.2 `var`-slot syscall numbers (`src/syscalls.cyr`) are non-literal at every call site, and cyrius's Win64 PE syscall reroute only fires for a **compile-time-literal** number — so `syscall(_SK_SYS_WRITE, …)` fell through to a raw, non-functional instruction and wrote nothing (no fault, exit 0). Full write-up + repro: [`issues/2026-06-09-windows-pe-var-syscall-no-reroute.md`](issues/2026-06-09-windows-pe-var-syscall-no-reroute.md). Upstream cyrius issue: [`2026-06-09-pe-syscall-variable-number-not-rerouted.md`](https://github.com/MacCracken/cyrius/blob/main/docs/development/issues/2026-06-09-pe-syscall-variable-number-not-rerouted.md).
+First sakshi consumer to ship a Windows PE binary (ai-hwaccel 2.3.9) found that **all sakshi output was silently dropped on Windows**: the v2.2.2 `var`-slot syscall numbers (`src/syscalls.cyr`) are non-literal at every call site, and cyrius's Win64 PE syscall reroute only fires for a **compile-time-literal** number — so `syscall(_SK_SYS_WRITE, …)` fell through to a raw, non-functional instruction and wrote nothing (no fault, exit 0). Full write-up + repro: [`issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md`](issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md). Upstream cyrius issue: [`2026-06-09-pe-syscall-variable-number-not-rerouted.md`](https://github.com/MacCracken/cyrius/blob/main/docs/development/issues/2026-06-09-pe-syscall-variable-number-not-rerouted.md).
 
 Both items shipped in **v2.2.7**.
 
