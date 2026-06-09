@@ -5,6 +5,44 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.8] - 2026-06-09
+
+### Changed
+
+- **`cyrius` pin bumped 6.1.15 → 6.1.16 — closes the Windows/PE
+  release-packaging blocker.** 6.1.16 ships the two upstream fixes the
+  sakshi v2.2.7 stopgap was filed against:
+  1. **`cycc_win` now ships in the x86_64 release tarball.** Every
+     published x86_64 tarball since cyrius v6.0.50 lacked the PE
+     cross-compiler, so a pinned-release install had no
+     `~/.cyrius/bin/cycc_win` and `cyrius build --win` failed with
+     "cycc_win missing from the Cyrius install" — the sakshi CI blocker
+     that kept the `build-windows` lane from running on a pinned
+     toolchain. 6.1.16 is the first tarball that lets sakshi re-pin and
+     cross-build PE in CI.
+  2. **PE `syscall(<var>, …)` now routes at runtime** instead of
+     silently emitting the Linux `0F 05` instruction. This is the clean
+     upstream fix for the v2.2.2 `var`-dispatch silent-output-drop
+     (HIGH-sev; resolves the upstream half of
+     [`issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md`](docs/development/issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md)).
+  The v2.2.7 `#ifdef CYRIUS_TARGET_WIN` literal-syscall stopgap in
+  `src/output.cyr` / `src/syscalls.cyr` / `src/clock.cyr` is retained
+  (redundant but harmless under the runtime dispatch; retiring it is a
+  separate follow-up). No sakshi source changes. Verified locally on
+  6.1.16: `cyrius deps` clean, smoke green, **57/57 tests pass**, PE
+  cross-build (`cycc_win`, DCE) produces a valid `PE32+` binary that
+  **emits its log line under wine** (the silent-drop regression check).
+- `dist/sakshi.cyr` regenerated via `scripts/bundle.sh` at v2.2.8.
+
+### Notes
+
+- **UDP output (`SK_OUT_UDP`) still unsupported on Windows.** 6.1.16's
+  PE syscall whitelist still excludes `socket` (41) / `sendto` (44);
+  Windows consumers use the stderr or file target. `nanosleep` (35)
+  also remains unrouted on PE — sakshi's `CYRIUS_TARGET_WIN` clock
+  calibration already busy-spins on the routed `clock_gettime` (228),
+  so this does not affect the default stderr path.
+
 ## [2.2.7] - 2026-06-09
 
 ### Fixed

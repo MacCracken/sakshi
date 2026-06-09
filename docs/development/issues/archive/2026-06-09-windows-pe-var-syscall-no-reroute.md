@@ -1,11 +1,11 @@
-# Windows / PE target: all sakshi output silently dropped — `var` syscall numbers defeat the cyrius PE reroute — RESOLVED sakshi-side (v2.2.7); upstream open
+# Windows / PE target: all sakshi output silently dropped — `var` syscall numbers defeat the cyrius PE reroute — FULLY RESOLVED (v2.2.8 / cyrius 6.1.16)
 
 **Filed:** 2026-06-09
 **Reporter:** ai-hwaccel v2.3.9 (first sakshi consumer to ship a Windows PE binary).
 **Cyrius version at time of report:** 6.1.15 (`cycc_win`).
 **Affected sakshi source:** `src/syscalls.cyr`, `src/output.cyr`, `src/clock.cyr` (everything that emits I/O).
 **Severity:** **P1.** sakshi produces a clean-looking PE binary that logs **nothing** — no fault, exit 0, zero bytes on stderr/file/UDP. Silent total feature loss on a tier-1 target, and it is the *portable* arch-dispatch idiom (v2.2.2) that triggers it.
-**Status:** **resolved sakshi-side in v2.2.7** — the "sakshi stopgap" below shipped (`#ifdef CYRIUS_TARGET_WIN` literal-syscall branches + busy-spin clock calibration), and a `build-windows` CI lane now runs the PE smoke under wine and asserts the log line reaches stderr. The upstream cyrius issue (runtime dispatch of non-literal PE syscall numbers) remains open as the clean fix that would retire the per-call-site workaround.
+**Status:** **fully resolved (v2.2.8 / cyrius 6.1.16).** Resolved sakshi-side in v2.2.7 — the "sakshi stopgap" below shipped (`#ifdef CYRIUS_TARGET_WIN` literal-syscall branches + busy-spin clock calibration), and a `build-windows` CI lane now runs the PE smoke under wine and asserts the log line reaches stderr. **Upstream now closed too:** cyrius **6.1.16** emits a runtime dispatch (`cmp`/`jne` switch on the syscall number) for non-literal PE syscall numbers — the clean fix — and ships the previously-missing `cycc_win` in the x86_64 release tarball (the actual CI blocker for a pinned install). sakshi re-pinned 6.1.15 → 6.1.16 in v2.2.8; the per-call-site stopgap is retained (redundant but harmless) and retiring it is a separate follow-up.
 
 ## Summary
 
