@@ -74,6 +74,23 @@ fn bench_hook_emit() {
 }
 
 # ================================================================
+# Ring write path — plain (SK_OUT_BUFFER) vs atomic (SK_OUT_ATOMIC_RING).
+# Both share a precomputed ts so the measured delta is pure write cost.
+# Roadmap v2.3.0 target: atomic ≤ 2× the plain ring cost (no contention).
+# ================================================================
+var _bench_ring_ts: i64 = 0;
+
+fn bench_ring_write() {
+    _sk_write_ring_event(_bench_ring_ts, 3, 0, "bench ring msg", 14);
+    return 0;
+}
+
+fn bench_aring_write() {
+    _sk_write_aring_event(_bench_ring_ts, 3, 0, "bench ring msg", 14);
+    return 0;
+}
+
+# ================================================================
 # Timestamp — cycle-counter read + Q32 mul-shift since v2.2.0
 # (was clock_gettime + vDSO at ~373 ns on 5.7.48 / v2.1.1)
 # ================================================================
@@ -137,6 +154,17 @@ bench_run_batch(b8, &bench_hook_emit, 10000, 100);
 bench_report(b8);
 sakshi_clear_emit_hook();
 if (devnull >= 0) { sakshi_set_output_fd(devnull); }
+
+# Ring write paths — precompute one ts, then hammer each writer directly.
+_bench_ring_ts = _sk_now_ns();
+
+var b9 = bench_new("ring_write");
+bench_run_batch(b9, &bench_ring_write, 10000, 100);
+bench_report(b9);
+
+var b10 = bench_new("aring_write");
+bench_run_batch(b10, &bench_aring_write, 10000, 100);
+bench_report(b10);
 
 # Cleanup
 if (devnull >= 0) { syscall(_SK_SYS_CLOSE, devnull); }

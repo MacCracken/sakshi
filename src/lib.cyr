@@ -17,6 +17,8 @@
 #           sakshi_output_file, sakshi_output_file_close,
 #           sakshi_output_buffer, sakshi_ring_read_raw, sakshi_ring_len,
 #           sakshi_ring_clear, sakshi_ring_event_count, sakshi_ring_decode_event,
+#           sakshi_output_atomic_ring, sakshi_aring_read_raw, sakshi_aring_len,
+#           sakshi_aring_clear, sakshi_aring_event_count,
 #           sakshi_output_udp, sakshi_output_udp_close, sakshi_ipv4,
 #           sakshi_set_emit_hook, sakshi_clear_emit_hook
 #   Clock:  sakshi_clock_recalibrate (long-running consumers, opt-in)
@@ -27,6 +29,9 @@
 # Constraints:
 #   - Single-threaded only. No synchronization primitives — concurrent
 #     access to global state (log level, ring buffer, span stack) is undefined.
+#     EXCEPTION: the SK_OUT_ATOMIC_RING target (v2.3.0) is multi-producer safe
+#     — its writer reserves space with a lock-free atomic_fetch_add, so several
+#     threads may emit into it concurrently. The reader stays single-consumer.
 #   - UDP output is unencrypted and unauthenticated. Do not send sensitive
 #     data over UDP without an application-layer security wrapper.
 #   - Monotonic timestamps overflow i64 after ~292 years of continuous uptime.

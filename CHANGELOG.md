@@ -5,6 +5,49 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-06-12
+
+### Added
+
+- **Atomic ring buffer output target (`SK_OUT_ATOMIC_RING = 5`) — interim
+  unblock of the per-CPU ring (roadmap item #4).** A multi-producer,
+  single-consumer (MPSC) flight-recorder ring that reuses the existing 12-byte
+  binary event format and overwrite-oldest policy, but advances its write
+  cursor with a single lock-free `atomic_fetch_add(event_size)` reservation
+  instead of the plain ring's per-byte read-modify-write. Each producer
+  reserves a disjoint byte range and fills it independently, so several threads
+  may emit concurrently with no torn cursor and no lost events — built on the
+  acquire-release `atomic_fetch_add` / `atomic_load` / `atomic_store`
+  primitives in `lib/atomic.cyr` (x86_64 `lock xadd`, aarch64 `ldaxr`/`stlxr`).
+  New public API:
+  - `sakshi_output_atomic_ring()` — select the target (emits a metadata event).
+  - `sakshi_aring_read_raw(dst, max_len)`, `sakshi_aring_len()`,
+    `sakshi_aring_event_count()`, `sakshi_aring_clear()` — thread-safe
+    (single-reader) accessors that load the cursors atomically.
+
+  The binary layout is identical to `SK_OUT_BUFFER`, so the existing
+  `sakshi_ring_decode_event` decodes either ring unchanged. **Performance:**
+  the atomic writer is **~67 ns/event vs ~67 ns for the plain `SK_OUT_BUFFER`
+  writer (1.0×, no contention)** — the single `fetch_add` reservation offsets
+  the ~26 per-byte cursor increments it replaces, landing well inside the
+  roadmap's ≤2× target. Bench: `aring_write` / `ring_write` in
+  `tests/bcyr/sakshi.bcyr`, 1,000,000 iters each.
+
+  **Limitation (documented in-source):** a bulk read taken while producers are
+  mid-write may observe a partially written newest event — the reader does not
+  wait for in-flight writers to drain. The flight-recorder contract is that the
+  single reader runs when producers are quiesced (crash dump / debug pause).
+  Full per-CPU partitioning with a commit watermark remains upstream-blocked on
+  `sched_getcpu` — see
+  [`issues/2026-04-30-cyrius-lang-blockers.md`](docs/development/issues/2026-04-30-cyrius-lang-blockers.md)
+  item #4.
+
+  Why minor: adds a new public output target and ring-reader API surface.
+  External (dist-bundle) consumers using this target must
+  `include "lib/atomic.cyr"` before `lib/sakshi.cyr`, the same way
+  `sakshi_set_emit_hook` requires `lib/fnptr.cyr` (the bundle strips its own
+  includes). Sibling-checkout consumers get it transitively via `src/lib.cyr`.
+
 ## [2.2.11] - 2026-06-12
 
 ### Fixed

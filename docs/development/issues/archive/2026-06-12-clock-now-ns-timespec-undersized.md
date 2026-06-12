@@ -2,8 +2,17 @@
 
 **Filed:** 2026-06-12
 **Severity:** MEDIUM — latent (layout-masked) 8-byte OOB on every raw clock read
-**Status:** OPEN — fix below; verify against the current tree before applying (a
-working session may have partially applied it).
+**Status:** RESOLVED — shipped in v2.2.11 (tag `2.2.11`). `src/clock.cyr`
+`_sk_clock_now_ns_raw` now declares `var ts[16]`, the dist bundle is
+regenerated, and the fix is documented under CHANGELOG `[2.2.11] → Fixed`.
+
+> **Resolution note — the pin did NOT stay at 6.1.17.** This issue recommended
+> holding the pin at 6.1.17. In the actual fix it moved to **6.2.1** anyway, as
+> part of the deliberate ecosystem-wide stdlib pin sweep (documented in
+> CHANGELOG `[2.2.11] → Changed`), independent of this byte-buffer resize. The
+> resize itself stayed toolchain-agnostic (`[16]`, not the 6.2.1 `i64[2]`
+> spelling), exactly as advised. Nothing to reset. Archived during the v2.3.0
+> closeout pass after confirming the tree matches the intended end state.
 
 ## The bug
 

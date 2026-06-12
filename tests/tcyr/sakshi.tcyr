@@ -94,6 +94,43 @@ sakshi_ring_clear();
 assert_eq(sakshi_ring_event_count(), 0, "cleared count");
 assert_eq(sakshi_ring_len(), 0, "cleared len");
 
+# ================================================================
+# Atomic ring buffer (v2.3.0) — MPSC, lock-free reservation writer
+# ================================================================
+test_group("atomic ring write");
+sakshi_aring_clear();
+sakshi_output_atomic_ring();
+# sakshi_output_atomic_ring emits 1 metadata event, then 2 log events = 3 total
+sakshi_info("aring one", 9);
+sakshi_warn("aring two", 9);
+assert_eq(sakshi_aring_event_count(), 3, "3 events (1 meta + 2 log)");
+assert_gt(sakshi_aring_len(), 0, "atomic ring has bytes");
+
+test_group("atomic ring read");
+var araw[4096];
+var an = sakshi_aring_read_raw(&araw, 4096);
+assert_gt(an, 0, "aring read_raw > 0");
+
+test_group("atomic ring decode (shared binary format)");
+# Same 12-byte-header layout as SK_OUT_BUFFER, so sakshi_ring_decode_event
+# decodes the atomic ring's bytes unchanged.
+var atext[256];
+var atext_len: i64 = 0;
+var aconsumed = sakshi_ring_decode_event(&araw, an, &atext, 256, &atext_len);
+assert_gt(aconsumed, 0, "aring decode consumed > 0");
+assert_gt(atext_len, 0, "aring decode text_len > 0");
+
+test_group("atomic ring reservation is non-overlapping");
+# Each event reserves a unique byte range via atomic_fetch_add, so N events
+# advance the cursor by exactly sum(event_size). Two 9-byte messages after the
+# 8-byte meta event = 3 events, (12+8) + (12+9) + (12+9) = 62 bytes.
+assert_eq(sakshi_aring_len(), 62, "cursor = sum of reserved event sizes");
+
+test_group("atomic ring clear");
+sakshi_aring_clear();
+assert_eq(sakshi_aring_event_count(), 0, "cleared count");
+assert_eq(sakshi_aring_len(), 0, "cleared len");
+
 # Switch back to stderr
 sakshi_set_output(SK_OUT_STDERR);
 
