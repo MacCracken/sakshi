@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   next stack local. Same class as v2.2.9's `sleep_ts[2]` → `[16]` fix, applied to
   the second `timespec` site. Fixed to `var ts[16]`. Surfaced by the cyrius
   v6.2.1 address-taken-local-array audit; latent (layout-masked) on current
-  builds. Pin stays 6.1.17 — this is a byte-buffer size fix, toolchain-agnostic.
+  builds.
 
 ### Changed
 
@@ -36,10 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every other target). Verified: PE smoke cross-built with `cyrius build
   --win` compiles clean (the 6.1.17 PE syscall-routing list covers both
   `35` and `228`) and the Linux suite stays 57/57.
-- **Requires cyrius ≥ 6.1.17** (pin unchanged from v2.2.9's 6.1.17). The
-  unified clock path depends on PE `nanosleep(35)` routing to `Sleep`, which
-  6.1.17 introduced — building this release against an older toolchain would
-  reinstate the `-ENOSYS` PE sleep failure the removed branches guarded.
+- **cyrius pin → 6.2.1** (was 6.1.17), as part of the ecosystem-wide stdlib
+  pin sweep onto the current toolchain. The unified clock path still depends on
+  PE `nanosleep(35)` routing to `Sleep` (6.1.17) — 6.2.1 retains it. Verified
+  green on 6.2.1: `cyrius deps` resolves cleanly, full `.tcyr` suite 57/57,
+  bench 2/2.
 - `dist/sakshi.cyr` regenerated via `scripts/bundle.sh` at v2.2.11.
 
 ## [2.2.9] - 2026-06-09
