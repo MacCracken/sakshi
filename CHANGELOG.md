@@ -5,7 +5,19 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.2.10] - Unreleased
+## [2.2.11] - 2026-06-12
+
+### Fixed
+
+- **`_sk_clock_now_ns_raw` timespec was undersized — the sibling the v2.2.9
+  `sleep_ts` fix missed.** `_sk_clock_now_ns_raw` declared its `clock_gettime`
+  output buffer as `var ts[2]`. Cyrius `var[N]` is **byte-sized**, so `[2]` =
+  8 bytes — but the kernel writes a 16-byte `timespec`, and `_sk_clock_now_ns_raw`
+  reads `tv_nsec` at `load64(&ts + 8)`; both ran 8 bytes past the buffer into the
+  next stack local. Same class as v2.2.9's `sleep_ts[2]` → `[16]` fix, applied to
+  the second `timespec` site. Fixed to `var ts[16]`. Surfaced by the cyrius
+  v6.2.1 address-taken-local-array audit; latent (layout-masked) on current
+  builds. Pin stays 6.1.17 — this is a byte-buffer size fix, toolchain-agnostic.
 
 ### Changed
 
@@ -28,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unified clock path depends on PE `nanosleep(35)` routing to `Sleep`, which
   6.1.17 introduced — building this release against an older toolchain would
   reinstate the `-ENOSYS` PE sleep failure the removed branches guarded.
-- `dist/sakshi.cyr` regenerated via `scripts/bundle.sh` at v2.2.10.
+- `dist/sakshi.cyr` regenerated via `scripts/bundle.sh` at v2.2.11.
 
 ## [2.2.9] - 2026-06-09
 
