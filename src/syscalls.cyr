@@ -13,15 +13,17 @@
 # `cyrius build --aarch64`. Pre-v2.2.2 the numbers were inlined as bare
 # integers, so the aarch64 binary called the wrong syscall (silent UB).
 
+# clock_gettime / nanosleep are NOT defined here: their reroute-required numbers
+# (228 / 35) must be LITERALS at the call site (clock.cyr) — a `var`/named constant
+# does not const-fold, so the macOS/Windows reroute silently fails (cyrius issue
+# 2026-06-16-var-syscall-number-defeats-macho-pe-reroute).
 #ifdef CYRIUS_ARCH_X86
 var _SK_SYS_WRITE         = 1;
 var _SK_SYS_OPEN          = 2;
 var _SK_SYS_CLOSE         = 3;
-var _SK_SYS_NANOSLEEP     = 35;
 var _SK_SYS_SOCKET        = 41;
 var _SK_SYS_SENDTO        = 44;
 var _SK_SYS_EXIT          = 60;
-var _SK_SYS_CLOCK_GETTIME = 228;
 #endif
 
 #ifdef CYRIUS_ARCH_AARCH64
@@ -30,8 +32,6 @@ var _SK_SYS_OPENAT        = 56;
 var _SK_SYS_CLOSE         = 57;
 var _SK_SYS_WRITE         = 64;
 var _SK_SYS_EXIT          = 93;
-var _SK_SYS_NANOSLEEP     = 101;
-var _SK_SYS_CLOCK_GETTIME = 113;
 var _SK_SYS_SOCKET        = 198;
 var _SK_SYS_SENDTO        = 206;
 var _SK_AT_FDCWD          = 0 - 100;
