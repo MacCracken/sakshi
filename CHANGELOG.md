@@ -5,7 +5,24 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.3.1] - Unreleased
+## [2.3.1] - 2026-06-17
+
+### Fixed
+
+- **TSC-calibration syscalls now route on macOS/Windows.** `_sk_clock_now_ns_raw`
+  and the calibration `nanosleep` (both reached only on the x86 calibration path)
+  used **`var`** syscall numbers (`_SK_SYS_CLOCK_GETTIME` / `_SK_SYS_NANOSLEEP`). A
+  `var` does not const-fold, so the toolchain's `syscall(228)`/`syscall(35)`
+  reroutes on macOS/Windows never fired — silently defeating exactly the PE
+  nanosleep routing the calibration comment relied on. Both are now **literals**;
+  `_sk_clock_now_ns_raw` additionally takes the GetTickCount64 return value on
+  Windows (the reroute returns ms in the register, not the timespec). Linux was
+  unaffected. Surfaced by cyrius issue
+  `2026-06-16-var-syscall-number-defeats-macho-pe-reroute`.
+- Removed the now-dead `_SK_SYS_CLOCK_GETTIME` / `_SK_SYS_NANOSLEEP` from
+  `src/syscalls.cyr` (both arches); fixed the `tests/tcyr/sakshi.tcyr` nanosleep
+  probe to a literal `35` and its `nap` buffer to `[16]` (was `[2]` — the
+  byte-sized-array OOB the production path had already fixed).
 
 ## [2.3.0] - 2026-06-12
 

@@ -92,7 +92,7 @@ fn _sk_clock_panic(msg, len): i64 {
 # Inlines the same syscall the v2.1.x _sk_now_ns used so the calibration
 # anchor is in the same time base as a non-cycle-counter implementation.
 fn _sk_clock_now_ns_raw(): i64 {
-    var ts[16];   # timespec {tv_sec, tv_nsec} = 16 bytes; was [2]=8B (byte-sized) → clock_gettime's 16-B write + load64(&ts+8) ran 8 B OOB. The sibling of the v2.2.9 sleep_ts[2] fix.
+    var ts[16];   # {tv_sec,tv_nsec} = 16 B (var[N] byte-sized; [2] would OOB the +8 store).
     # The syscall NUMBER 228 MUST be a literal — a `var`/named constant does not
     # const-fold, so the macOS __got reroute and the Windows IAT reroute never fire
     # and a raw bad syscall results (returned -9 / garbage). cyrius issue 2026-06-16.

@@ -39,10 +39,23 @@ jobs:
         run: cyrius deps
 
       - name: Lint
+        # Auto-discover every source/test/dist file so new modules + tests are
+        # covered without editing CI (the old hardcoded list missed tests/ and
+        # any module added later). Treat any cyrlint "  warn " line as a failure
+        # — `cyrius lint` itself exits 0 on warnings, so CI must enforce it.
+        # (Mirrors yukti's CI lint gate; added after the 2.3.1 clock fix, where a
+        # line-length warning in an edited file would otherwise have slipped through.)
         run: |
-          for f in src/syscalls.cyr src/clock.cyr src/format.cyr src/output.cyr src/error.cyr src/trace.cyr src/span.cyr src/lib.cyr programs/smoke.cyr dist/sakshi.cyr; do
-            cyrius lint "$f"
+          fail=0
+          for f in src/*.cyr programs/*.cyr tests/tcyr/*.tcyr tests/bcyr/*.bcyr fuzz/*.fcyr dist/sakshi.cyr; do
+            [ -e "$f" ] || continue
+            out=$(cyrius lint "$f" 2>&1)
+            echo "$out"
+            if echo "$out" | grep -qE '^\s*warn '; then
+              fail=1
+            fi
           done
+          [ $fail -eq 0 ] || { echo "lint: warnings present"; exit 1; }
 
       - name: Verify dist/sakshi.cyr is in sync with src/
         run: |
