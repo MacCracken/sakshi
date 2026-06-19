@@ -5,6 +5,42 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-06-19
+
+### Added
+
+- **`sakshi_log_kv(level, msg, msg_len, key, key_len, val, val_len)` — one
+  key=value context pair at a runtime-chosen level.** Composes `msg key=value`
+  into a 256-byte scratch and emits **one** event through `_sk_emit`, so the
+  pair reaches *every* output target (stderr / file / ring / atomic-ring / UDP /
+  hook) and binary events stay intact. All lengths are explicit byte counts
+  (sakshi convention — no `strlen`, no NUL requirement); truncates at 256 bytes.
+  Runtime level filtering applies; the level is a runtime arg, so there's no
+  compile-time per-level elision (gate at the call site with the per-level fns
+  if a zero-cost path is needed). New test group `kv logging` verifies the
+  composed bytes (`hi k=v`) and the runtime level gate — suite now 73/0.
+
+  Folded from agnosys `logging.cyr` (`log_msg_kv`) in the agnosys → agnodrm
+  decomposition, which makes sakshi the ecosystem logging home. The companion
+  capability `log_init_from_env` was **not** ported verbatim — its
+  `/proc/self/environ` parse is Linux-eccentric and has no consumer; a portable
+  `getenv`-based `sakshi_init_from_env` is tracked on the roadmap (Next minor).
+
+## [2.3.2] - 2026-06-17
+
+### Fixed
+
+- **File-output log open now uses the correct `open` flags on macOS.**
+  `sakshi_output_file` (`src/output.cyr`) hard-coded the Linux flag literal
+  `O_WRONLY | O_CREAT | O_APPEND = 1089`. On Darwin those bits differ (`O_CREAT`
+  is `0x200` not `64`, `O_APPEND` is `0x8` not `1024`), so `1089` is the wrong
+  flag set — the log file was never created and every file-output sink silently
+  no-op'd on arm64-macOS. Now per-target: **`521` (0x209) on macOS, `1089`
+  elsewhere**. (sakshi can't pull the stdlib's per-target `O_*` — the
+  foundation-layer no-external-deps rule — so the literal branches in place.)
+  Surfaced by cyrius issue `2026-06-17-io-cyr-o-flags-not-darwin-translated`;
+  `tests/tcyr/sakshi_full.tcyr`'s file-output assertion now passes on arm64-macOS.
+
 ## [2.3.1] - 2026-06-17
 
 ### Fixed

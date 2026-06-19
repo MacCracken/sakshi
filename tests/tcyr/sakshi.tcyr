@@ -236,6 +236,43 @@ sakshi_info("post-clear", 10);
 assert_eq(hk_count, 3, "hook not fired after clear");
 
 # ================================================================
+# Key=value structured emit (sakshi_log_kv) — folded from agnosys
+# ================================================================
+test_group("kv logging");
+var kv_count: i64 = 0;
+var kv_len: i64 = 0;
+var kv_buf[64];
+fn _kv_hook(ts, level, category, msg, msg_len, elapsed_ns) {
+    kv_count = kv_count + 1;
+    kv_len = msg_len;
+    var i = 0;
+    while (i < msg_len) {
+        if (i >= 64) { break; }
+        store8(&kv_buf + i, load8(msg + i));
+        i = i + 1;
+    }
+    return 0;
+}
+
+sakshi_set_emit_hook(&_kv_hook);
+sakshi_set_level(SK_INFO);
+sakshi_log_kv(SK_INFO, "hi", 2, "k", 1, "v", 1);   # composes "hi k=v"
+assert_eq(kv_count, 1, "kv emitted one event");
+assert_eq(kv_len, 6, "kv composed 'hi k=v' = 6 bytes");
+assert_eq(load8(&kv_buf), 104, "kv byte0 is 'h'");
+assert_eq(load8(&kv_buf + 2), 32, "kv separator is space");
+assert_eq(load8(&kv_buf + 3), 107, "kv key byte is 'k'");
+assert_eq(load8(&kv_buf + 4), 61, "kv pair joiner is '='");
+assert_eq(load8(&kv_buf + 5), 118, "kv value byte is 'v'");
+
+# Runtime level gate: a DEBUG kv under an INFO ceiling must not emit.
+sakshi_log_kv(SK_DEBUG, "x", 1, "k", 1, "v", 1);
+assert_eq(kv_count, 1, "kv respects runtime level filter");
+
+sakshi_clear_emit_hook();
+sakshi_set_output_fd(2);
+
+# ================================================================
 # Cycle-counter clock (v2.2.0)
 # ================================================================
 test_group("clock: cycle counter");

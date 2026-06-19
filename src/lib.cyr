@@ -10,6 +10,7 @@
 #           sakshi_err_code, sakshi_err_category, sakshi_err_context,
 #           sakshi_is_err, sakshi_is_ok
 #   Trace:  sakshi_fatal, sakshi_error, sakshi_warn, sakshi_info, sakshi_debug, sakshi_trace,
+#           sakshi_log_kv (one key=value pair, runtime level),
 #           sakshi_set_level, sakshi_get_level
 #   Span:   sakshi_span_enter, sakshi_span_exit, sakshi_span_depth,
 #           sakshi_trace_set, sakshi_trace_id
