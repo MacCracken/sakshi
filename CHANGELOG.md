@@ -5,6 +5,33 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-06-20
+
+**AGNOS syscall-ABI correctness — file/socket numbers + `open` ABI.** `cyrius`
+predefines `CYRIUS_ARCH_X86` on *every* x86 build, AGNOS included, so the
+agnos ring-3 target silently fell into sakshi's Linux x86_64 branch and called
+`open` #2 / `close` #3 / `exit` #60 — on agnos those are `getpid` / `spawn` /
+undefined, corrupting every file log. Source-only; Linux/macos/aarch64
+behavior byte-identical.
+
+### Fixed
+
+- **`src/syscalls.cyr` — precedence agnos branch.** Added an
+  `#ifdef CYRIUS_TARGET_AGNOS` block (`write` #1, `open` #7, `close` #6,
+  `exit` #0) ahead of the Linux/aarch64 branches, which are now wrapped in
+  `#ifndef CYRIUS_TARGET_AGNOS` (the always-on `CYRIUS_ARCH_X86` no longer wins
+  on agnos). `_sk_open` gained an agnos path that computes the byte length and
+  remaps `O_*` → `AO_*` for agnos `open(name, namelen, flags)` (mirrors
+  `lib/io.cyr` `file_open`).
+- **`src/output.cyr` — guarded BSD `socket`/`sendto`.** agnos has no BSD socket
+  syscalls; `sakshi_output_udp` returns -1 on agnos (UDP log transport
+  unavailable → caller keeps the stderr/file target) and the `sendto` site is
+  excluded from the agnos build.
+
+### Changed
+
+- **VERSION `2.4.0` → `2.4.1`.**
+
 ## [2.4.0] - 2026-06-19
 
 ### Added

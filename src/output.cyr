@@ -365,6 +365,12 @@ var _sk_udp_addr[16];
 # ip: 32-bit IPv4 address in network byte order
 # port: 16-bit port in host byte order
 fn sakshi_output_udp(ip, port): i64 {
+    #ifdef CYRIUS_TARGET_AGNOS
+    # agnos has no BSD socket/sendto syscalls — UDP log transport is unavailable.
+    # Return error so the caller keeps the current stderr/file target.
+    return 0 - 1;
+    #endif
+    #ifndef CYRIUS_TARGET_AGNOS
     # socket(AF_INET=2, SOCK_DGRAM=2, 0)
     var fd = syscall(_SK_SYS_SOCKET, 2, 2, 0);
     if (fd < 0) { return fd; }
@@ -379,6 +385,7 @@ fn sakshi_output_udp(ip, port): i64 {
 
     _sk_output_target = SK_OUT_UDP;
     return fd;
+    #endif
 }
 
 # Close UDP socket, revert to stderr
@@ -409,7 +416,9 @@ fn _sk_write_udp_event(ts, level, category, msg, msg_len): i64 {
     _sk_memcpy(&pkt + 12, msg, pkt_msg_len);
 
     var total = 12 + pkt_msg_len;
+    #ifndef CYRIUS_TARGET_AGNOS
     syscall(_SK_SYS_SENDTO, _sk_udp_fd, &pkt, total, 0, &_sk_udp_addr, 16);
+    #endif
     return 0;
 }
 
