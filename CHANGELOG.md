@@ -5,6 +5,29 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.2] - 2026-06-25
+
+**AGNOS clock: use `uptime_ms` directly instead of the rdtsc-TSC fast-path.**
+`src/clock.cyr`'s `_sk_clock_now_ns_raw`/`_sk_clock_init` sat under `#ifdef
+CYRIUS_ARCH_X86` with no agnos exclusion — and `CYRIUS_ARCH_X86` is predefined
+on agnos — so on agnos the clock ran `syscall(228)` (clock_gettime, out of
+agnos's frozen syscall range → garbage) and `syscall(35)` (= agnos `sysinfo`,
+not nanosleep), calibrating the TSC against garbage → bogus ns scaling for
+every span/trace. Fixed with an agnos branch (mirrors `chrono.cyr`):
+`_sk_clock_now_ns_raw` and `_sk_now_ns` read `uptime_ms` (#40) directly
+(`syscall(40) * 1e6`), and `_sk_clock_init` is a no-op sentinel on agnos. The
+TSC fast-path is skipped on agnos deliberately — `uptime_ms` is ~10 ms-granular
+at the 100 Hz tick, far too coarse to calibrate a GHz TSC over a short window,
+so a direct (coarse but correct) read beats a garbage-calibrated TSC. x86 /
+aarch64 / Windows / macOS paths are byte-identical (the change is purely
+additive `#ifdef CYRIUS_TARGET_AGNOS` branches). Fixes cyrius issue
+`2026-06-23-agnos-portability-sweep-residuals` (part 1). All non-agnos targets
+verified byte-identical; sakshi.tcyr 73/73; agnos compiles clean.
+
+### Fixed
+- `clock.cyr`: agnos no longer calibrates the TSC against undefined syscalls
+  (#228/#35) — reads `uptime_ms` (#40) directly on agnos (coarse but correct).
+
 ## [2.4.1] - 2026-06-20
 
 **AGNOS syscall-ABI correctness — file/socket numbers + `open` ABI.** `cyrius`
