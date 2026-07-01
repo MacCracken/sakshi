@@ -5,6 +5,21 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.3] - 2026-06-30
+
+**Toolchain pin → 6.3.15** (base-stack agnos-readiness migration, tier 0 leaf). No
+code change — sakshi was already agnos-portable as of 2.4.2 (the `clock.cyr`
+agnos branch) and its UDP-log socket path is correctly `#ifdef
+CYRIUS_TARGET_AGNOS`-guarded (returns -1 on agnos, keeps stderr). Bumped the pin
+so the base security stack (sigil/libro/bote/phylax/…) can migrate onto a single
+current toolchain. Verified: `src/lib.cyr` compiles clean on both host and
+`--agnos` at 6.3.15 (byte-identical surface; the `vec_get`/`vec_len` warnings are
+pre-existing DCE-pruned unreachables).
+
+### Changed
+- Toolchain pin `6.2.1` → `6.3.15`. No source change; dist regenerated for the
+  version stamp only.
+
 ## [2.4.2] - 2026-06-25
 
 **AGNOS clock: use `uptime_ms` directly instead of the rdtsc-TSC fast-path.**
