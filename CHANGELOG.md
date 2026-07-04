@@ -5,6 +5,20 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.4] - 2026-07-03
+
+### Added
+
+- **128-bit trace-id support** (`span.cyr`). `sakshi_trace_set_128(hi, lo)` +
+  `sakshi_trace_id_hi()` / `sakshi_trace_id_lo()` let a consumer preserve a full
+  W3C `traceparent` 128-bit trace-id instead of folding it to 64 bits. The
+  existing `sakshi_trace_set(id)` / `sakshi_trace_id()` are unchanged — a 64-bit
+  id is the trace-id's low half (a 64-bit `sakshi_trace_set` now also clears the
+  high half). Purely additive; no behavior change for existing callers. New
+  `trace ID 128-bit` test group (+5 assertions; 78 total). Filed by daimon
+  (consumer, 1.3.3 distributed tracing) — closes
+  `docs/development/issues/2026-07-03-trace-id-128-bit-w3c-round-trip.md`.
+
 ## [2.4.3] - 2026-06-30
 
 **Toolchain pin → 6.3.15** (base-stack agnos-readiness migration, tier 0 leaf). No
