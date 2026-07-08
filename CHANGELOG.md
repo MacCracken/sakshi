@@ -5,6 +5,17 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.5] - 2026-07-08
+
+### Fixed
+
+- **agnos `_sk_open` folded `O_RDWR` → `AO_WRONLY`, so reads on an RDWR fd failed.**
+  `src/syscalls.cyr` mapped `if ((flags & 3) != 0) { ao = ao | 0x1; }`, folding both
+  `O_WRONLY` (1) and `O_RDWR` (2) to write-only and never emitting `AO_RDWR` (0x2). The
+  access-mode bits are 1:1 Linux↔agnos, so they now pass through: `ao = ao | (flags & 3);`.
+  Mirrors the cyrius v6.4.27 `lib/io.cyr` fix (mirshi-verified there: fixed→42, buggy→4);
+  the sakshi copy is the same code path.
+
 ## [2.4.4] - 2026-07-03
 
 ### Added
