@@ -47,6 +47,22 @@ Item #1 (compile-time log-level elimination) **shipped in v2.2.8** via the `#if 
 
 ## Cleanup / hardening — no firm version
 
-_None open._ The clock-path items (timespec sizing in v2.2.9; Windows
+- **[P1] `_sk_open` collapses `O_RDWR` → `AO_WRONLY` on agnos** — `src/syscalls.cyr:66`.
+  Filed 2026-07-08. The agnos flag remap `if ((flags & 3) != 0) { ao = ao | 0x1; }`
+  folds both `O_WRONLY` (1) **and** `O_RDWR` (2) to `AO_WRONLY` — it never emits
+  `AO_RDWR` (0x2), even though agnos uses the same low-2-bit access-mode encoding
+  as Linux (RDONLY=0 / WRONLY=1 / RDWR=2). So any `O_RDWR` open through `_sk_open`
+  on agnos returns a **write-only** fd, and a later `sys_read` on it fails. The
+  helper was copied from `lib/io.cyr`'s `file_open` (its comment says "mirrors
+  lib/io.cyr file_open"), which carries the identical bug — filed upstream as
+  cyrius `issues/2026-07-08-io-file-open-agnos-rdwr-downgraded-to-wronly.md`.
+  Currently **latent** in sakshi (its own file opens are log output — write-only —
+  so the RDWR path isn't exercised), but the wrapper is wrong for any RDWR caller.
+  **Fix:** `ao = ao | (flags & 3);` (access-mode bits pass straight through);
+  the `O_CREAT`/`O_TRUNC`/`O_APPEND` mapping is already correct. Surfaced
+  downstream via patra → sit on agnos (an RDWR `.patra` read failed through the
+  cyrius copy of this bug).
+
+The clock-path items (timespec sizing in v2.2.9; Windows
 busy-spin + `GetTickCount64` removal in v2.2.10) are shipped — see
 [`CHANGELOG.md`](../../CHANGELOG.md).
