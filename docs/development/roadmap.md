@@ -1,6 +1,6 @@
 # Sakshi Development Roadmap
 
-> **Current: v2.4.6** (pin: cyrius 6.4.49). Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source — as of v2.2.10 even `src/clock.cyr` has no `#ifdef CYRIUS_TARGET_WIN` branch (PE now shares the calibrated-rdtsc timestamp path). The `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.3.0 adds the lock-free multi-producer `SK_OUT_ATOMIC_RING` target. v2.2.0 public API is stable.
+> **Current: v2.4.6** (pin: cyrius 6.4.49). Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source — as of v2.2.10 the hot timestamp path (`_sk_now_ns`) has no `#ifdef CYRIUS_TARGET_WIN` branch — PE shares the calibrated-rdtsc path; the only Windows branch left in `src/clock.cyr` is the one-time TSC-calibration anchor in `_sk_clock_now_ns_raw` (`GetTickCount64`). The `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.3.0 adds the lock-free multi-producer `SK_OUT_ATOMIC_RING` target. v2.2.0 public API is stable.
 >
 > Shipped history lives in [`CHANGELOG.md`](../../CHANGELOG.md). This file tracks only what's ahead.
 
@@ -29,18 +29,20 @@ single-reader API, benched at 1.0× the plain ring cost (no contention). See
 
 ## Cleanup / hardening — no firm version
 
-- **[P2] `ErrCode` enum members are bare globals — namespace `ERR_* → SAKSHI_ERR_*`**
-  — `src/error.cyr:26` → `dist/sakshi.cyr`. Filed 2026-06-23 (hoosh consumer);
-  sakshi is **fix owner** for its `ErrCode` enum. Cyrius enum members are global
-  constants, so sakshi's domain-agnostic `ERR_OK`/`ERR_TIMEOUT`/… collide by name
-  (different values) with other libs' error enums (yukti `ERR_TIMEOUT=9`,
-  ai-hwaccel `=3` vs sakshi `=5`) under textual-include last-definition-wins.
-  `sakshi_err_new` packs the literal into the low-16 `code` field, so a foreign
-  winner silently repacks a wrong value. `ErrCat` (`ERR_CAT_*`) is already
-  prefixed and does **not** collide. **Fix:** prefix the whole `ErrCode` enum
-  (`SAKSHI_ERR_*`), update every reference and `sakshi_err_*`, regenerate the
-  bundle. Breaking to the exported error surface → **target 2.5.0** (optionally
-  keep bare aliases for one minor). Detail:
+- **[3.0 — parked] `ErrCode` enum members are bare globals — ecosystem-wide name
+  collision** — `src/error.cyr:26`. Filed 2026-06-23 (hoosh consumer). Cyrius enum
+  members are global constants, so sakshi's domain-agnostic `ERR_OK`/`ERR_TIMEOUT`/…
+  collide by name (different values) with other libs' error enums (yukti
+  `ERR_TIMEOUT=9`, ai-hwaccel `=3` vs sakshi `=5`) under textual-include
+  last-definition-wins; `sakshi_err_new` packs the literal into the low-16 `code`
+  field, so a foreign winner silently repacks a wrong value. `ErrCat` (`ERR_CAT_*`)
+  is already prefixed and does **not** collide. **3.0.0-era** — any rename is
+  breaking across every downstream consumer, so the ecosystem coordination belongs
+  at a major. **Direction chosen — Option B:** sakshi, the **base logger**, keeps
+  the canonical bare names; downstream libs namespace theirs, so sakshi's own code
+  does **not** change. The enforcing lint gate is **filed** as cyrius proposal
+  `2026-07-11-error-enum-namespace-lint-gate.md`; the README + vidya ownership docs
+  follow once its mechanism settles. Detail:
   [`issues/2026-06-23-err-timeout-enum-collision-namespace.md`](issues/2026-06-23-err-timeout-enum-collision-namespace.md).
 
 The `_sk_open` `O_RDWR → AO_WRONLY` agnos remap (filed 2026-07-08) and the
