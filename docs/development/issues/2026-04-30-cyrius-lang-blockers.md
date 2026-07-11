@@ -1,6 +1,6 @@
 # Cyrius language blockers for sakshi
 
-**Audit point:** Cyrius 6.1.16 (sakshi v2.2.8).
+**Audit point:** Cyrius 6.4.49 (sakshi v2.4.6). _(Prior: 6.1.16 / v2.2.8.)_
 
 This is the canonical list of Cyrius language / stdlib features that sakshi roadmap items still need. Each row maps a sakshi roadmap item to the concrete upstream gap, the current workaround (if any), and severity from sakshi's perspective.
 
@@ -13,10 +13,14 @@ Re-audit and update this doc each time sakshi pins a new Cyrius release.
 | 2 | Deferred formatting (defmt-style: emit `(string_id, raw_args)` instead of formatted text) | Compiler-level string interning — `#strid "literal"` or equivalent, plus a linker-merged registry pass | None possible. The whole point of deferred formatting is that the format string never lives in the running binary; without compiler interning sakshi can't issue stable IDs. (cyrius has `defmt`/interning since 4.8.3 — buildable but a larger lift.) | **Medium.** Significant perf upside on the hot path (no formatting cost, smaller events on the wire) but only matters for high-volume tracing. |
 | 3 | Per-module log levels | Module identity at compile time — `__FILE__`, `__MODULE__`, or a `#module NAME` directive that yields a stable per-translation-unit ID | None. A consumer-threaded `mod_id` constant per call site is an API change we don't want. | **Medium.** Most users handle module-level filtering at the consumer side; sakshi-native support would be nicer but isn't blocking adoption. |
 | 4 | Per-CPU ring buffers | `sched_getcpu` / `sched_setaffinity` / `getcpu` syscall wrappers in `lib/syscalls*.cyr`. Atomics shipped in 5.7.x — `lib/atomic.cyr` provides `atomic_load/store/cas/fetch_add/fence` for both x86_64 and aarch64. | **Interim shipped in v2.3.0:** the global MPSC atomic ring (`SK_OUT_ATOMIC_RING`, `fetch_add`-reservation writer + `sakshi_aring_*` single-reader API). Per-CPU *partitioning* specifically still needs `sched_getcpu`. | **Low.** Per-CPU is a perf optimization for multi-threaded high-volume tracing; sakshi is single-threaded by current contract anyway. The atomic-ring interim (the more valuable shorter-term step) is now done — only the per-CPU partitioning remains. |
-| 6 | Structured typed fields (key-value per event with type info) | Generics, templates, or comptime layout. Cyrius is monomorphic — `hashmap.cyr` and `hashmap_str_keys.cyr` exist as separate files because parametric types don't. | None at the language level. Pragmatic alternative inside sakshi: define a fixed-shape schema struct that consumers populate and pass through the v2.1.0 emit hook. | **High effort upstream, medium value to sakshi.** A type-system extension is a large compiler project. The hook-based escape hatch already covers most of the use case. |
+| 6 | Structured typed fields (key-value per event with type info) | ~~Generics, templates, or comptime layout. Cyrius is monomorphic — parametric types don't exist.~~ **PARTIAL as of cyrius 6.4.0:** monomorphized generics landed (`CYRIUS_MONOMORPH`). General type-arg rule: scalar (`i8/i16/i32/i64`) or struct; `Result`/`Option`/`Tagged`/`cstring`/`f64v2`/`f64v4` unsupported. Generic **structs** accept scalar **or** struct type-args; generic **functions** accept scalar type-args only — struct type-args on fns, async generic fns, and non-`i64` fns with params (instantiate-once param re-emission) are all follow-ons. | Language support now exists for a fixed-shape typed-field API via a generic **struct** schema (the supported case); the v2.1.0 hook + `sakshi_log_kv` escape hatch still covers the untyped case. | **Medium value, now buildable.** No longer a hard upstream blocker — the remaining work is a sakshi-side design lift (typed-field schema over a monomorphized generic struct), tracked as a future minor. Struct type-args on generic fns + non-scalar type-args are the residual upstream gaps. |
 
 (Item 1, compile-time log-level elimination, shipped in v2.2.8 — see Cleared.
-Item 7, Windows / PE output, cleared in 6.1.16 — see Cleared.)
+Item 7, Windows / PE output, cleared in 6.1.16 — see Cleared.
+Item 6, structured typed fields, moved **blocked → partial** at the 6.4.49 re-audit:
+cyrius 6.4.0 shipped monomorphized generics. Items #2/#3/#4 re-confirmed absent at
+6.4.49 — `#strid`/`__FILE__`/`#module`/`sched_getcpu` markers not present in the
+6.4.49 compiler or stdlib.)
 
 ## Open silent-failure quirks (worth filing as bugs upstream)
 

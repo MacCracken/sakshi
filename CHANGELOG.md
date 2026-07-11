@@ -5,6 +5,50 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.6] - 2026-07-11
+
+**Toolchain pin → 6.4.49** (catch-up bump). The active `cycc` had already drifted
+to 6.4.49 while the manifest still pinned 6.4.26 — every build printed a
+`toolchain drift` warning. No source change: `src/` is untouched, and the
+distribution (`dist/sakshi.cyr`, built from `src/lib.cyr`) links only
+`lib/fnptr.cyr` + `lib/atomic.cyr` from the stdlib — both self-contained and
+byte-identical 6.4.26 → 6.4.49 — so the shipped surface is unchanged and the
+drift warning is now cleared. (The wider test/bench graph transitively touches
+more stdlib, e.g. `lib/assert.cyr` → `lib/syscalls.cyr`; all 78 + 2 cases pass
+green at 6.4.49.) Re-audited the cyrius language blockers against
+6.4.49 (last audit point was 6.1.16): **item #6 (structured typed fields) is now
+partially unblocked** — cyrius **6.4.0** shipped monomorphized generics; items
+#2/#3/#4 are unchanged.
+
+### Changed
+
+- **Toolchain pin `6.4.26` → `6.4.49`.** No source change; `dist/sakshi.cyr`
+  regenerated for the version stamp only. Local `./lib` repointed from a stale
+  real-directory snapshot back to a symlink onto the 6.4.49 stdlib (the
+  gitignored convention).
+- **Roadmap reconciled with shipped state** — removed the `[P1] _sk_open O_RDWR`
+  cleanup item (fixed in 2.4.5); refreshed the status header (`v2.4.0` / pin
+  `6.2.1` → `v2.4.6` / pin `6.4.49`).
+- **Cyrius-blockers re-audit → 6.4.49**
+  (`docs/development/issues/2026-04-30-cyrius-lang-blockers.md`). Item #6 (typed
+  fields) moves **blocked → partial**: cyrius 6.4.0 landed monomorphized generics
+  (`CYRIUS_MONOMORPH`) — generic **structs** take scalar (`i8/i16/i32/i64`) or
+  struct type-args, generic **functions** take scalar type-args (struct type-args
+  on fns, async generic fns, and non-`i64` param re-emission are follow-ons). A
+  fixed-shape typed-field API is therefore feasible in-tree via a generic
+  **struct** schema — filed as a future minor, not built here. Items #2 (`#strid`
+  interning), #3
+  (`__FILE__`/`#module`), and #4 (`sched_getcpu`) remain absent at 6.4.49.
+  Audit point advanced 6.1.16 → 6.4.49.
+- Archived the resolved trace-id 128-bit W3C issue (shipped in 2.4.4) to
+  `docs/development/issues/archive/`.
+
+### Verified
+
+- `cyrius build` (DCE) + smoke, `cyrius test` (78 + 2 pass, 0 fail), `cyrius bench`
+  (all metrics within noise of the 6.4.26 baseline), `cyrius lint` (clean), and
+  `dist/sakshi.cyr` in sync — all green at pin 6.4.49.
+
 ## [2.4.5] - 2026-07-08
 
 ### Fixed

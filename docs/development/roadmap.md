@@ -1,6 +1,6 @@
 # Sakshi Development Roadmap
 
-> **Current: v2.4.0** (pin: cyrius 6.2.1). Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source — as of v2.2.10 even `src/clock.cyr` has no `#ifdef CYRIUS_TARGET_WIN` branch (PE now shares the calibrated-rdtsc timestamp path). The `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.3.0 adds the lock-free multi-producer `SK_OUT_ATOMIC_RING` target (interim unblock of item #4). v2.2.0 public API is stable.
+> **Current: v2.4.6** (pin: cyrius 6.4.49). Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source — as of v2.2.10 even `src/clock.cyr` has no `#ifdef CYRIUS_TARGET_WIN` branch (PE now shares the calibrated-rdtsc timestamp path). The `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.3.0 adds the lock-free multi-producer `SK_OUT_ATOMIC_RING` target (interim unblock of item #4). v2.2.0 public API is stable.
 >
 > Shipped history lives in [`CHANGELOG.md`](../../CHANGELOG.md). This file tracks only what's ahead.
 
@@ -39,30 +39,29 @@ These items need cyrius compiler/stdlib work. Each will move into a minor lane o
 | 2 | Deferred formatting (defmt-style) | String interning / `#strid` | No estimate |
 | 3 | Per-module log levels | `__FILE__` / `__MODULE__` / `#module` | No estimate |
 | 4 | Per-CPU ring buffers (full) — _MPSC atomic ring interim shipped in v2.3.0_ | `sched_getcpu` / `getcpu` syscall wrappers | No estimate |
-| 6 | Structured typed fields | Generics / templates / comptime layout | No estimate |
+| 6 | Structured typed fields | Generics / templates / comptime layout | **Partial — monomorphized generics landed in cyrius 6.4.0** |
 
-Item #1 (compile-time log-level elimination) **shipped in v2.2.8** via the `#if SAKSHI_LEVEL >= n` threshold — cleared from this list. #4's MPSC atomic-ring interim **shipped in v2.3.0** (`SK_OUT_ATOMIC_RING`); only full per-CPU partitioning remains blocked on `sched_getcpu`. #6 (hook escape hatch from v2.1.0) has a functional sakshi-side workaround; #2 is buildable on cyrius's `defmt`/interning but is a larger lift. Full unblock of the rest is upstream's call.
+Item #1 (compile-time log-level elimination) **shipped in v2.2.8** via the `#if SAKSHI_LEVEL >= n` threshold — cleared from this list. #4's MPSC atomic-ring interim **shipped in v2.3.0** (`SK_OUT_ATOMIC_RING`); only full per-CPU partitioning remains blocked on `sched_getcpu` (re-confirmed absent at 6.4.49). #6 (hook escape hatch from v2.1.0) has a functional sakshi-side workaround, and the 6.4.49 re-audit found cyrius **6.4.0 shipped monomorphized generics** (generic structs take scalar `i8/i16/i32/i64` or struct type-args; generic fns take scalar type-args) — enough to back a fixed-shape typed-field API in-tree via a generic struct schema, so #6 is now **partially unblocked** (struct type-args on fns, async generic fns, and non-scalar type-args are the remaining gaps). #2 is buildable on cyrius's `defmt`/interning but is a larger lift; #3 (`__FILE__`/`#module`) is still absent. Full unblock of the rest is upstream's call.
 
 ---
 
 ## Cleanup / hardening — no firm version
 
-- **[P1] `_sk_open` collapses `O_RDWR` → `AO_WRONLY` on agnos** — `src/syscalls.cyr:66`.
-  Filed 2026-07-08. The agnos flag remap `if ((flags & 3) != 0) { ao = ao | 0x1; }`
-  folds both `O_WRONLY` (1) **and** `O_RDWR` (2) to `AO_WRONLY` — it never emits
-  `AO_RDWR` (0x2), even though agnos uses the same low-2-bit access-mode encoding
-  as Linux (RDONLY=0 / WRONLY=1 / RDWR=2). So any `O_RDWR` open through `_sk_open`
-  on agnos returns a **write-only** fd, and a later `sys_read` on it fails. The
-  helper was copied from `lib/io.cyr`'s `file_open` (its comment says "mirrors
-  lib/io.cyr file_open"), which carries the identical bug — filed upstream as
-  cyrius `issues/2026-07-08-io-file-open-agnos-rdwr-downgraded-to-wronly.md`.
-  Currently **latent** in sakshi (its own file opens are log output — write-only —
-  so the RDWR path isn't exercised), but the wrapper is wrong for any RDWR caller.
-  **Fix:** `ao = ao | (flags & 3);` (access-mode bits pass straight through);
-  the `O_CREAT`/`O_TRUNC`/`O_APPEND` mapping is already correct. Surfaced
-  downstream via patra → sit on agnos (an RDWR `.patra` read failed through the
-  cyrius copy of this bug).
+- **[P2] `ErrCode` enum members are bare globals — namespace `ERR_* → SAKSHI_ERR_*`**
+  — `src/error.cyr:26` → `dist/sakshi.cyr`. Filed 2026-06-23 (hoosh consumer);
+  sakshi is **fix owner** for its `ErrCode` enum. Cyrius enum members are global
+  constants, so sakshi's domain-agnostic `ERR_OK`/`ERR_TIMEOUT`/… collide by name
+  (different values) with other libs' error enums (yukti `ERR_TIMEOUT=9`,
+  ai-hwaccel `=3` vs sakshi `=5`) under textual-include last-definition-wins.
+  `sakshi_err_new` packs the literal into the low-16 `code` field, so a foreign
+  winner silently repacks a wrong value. `ErrCat` (`ERR_CAT_*`) is already
+  prefixed and does **not** collide. **Fix:** prefix the whole `ErrCode` enum
+  (`SAKSHI_ERR_*`), update every reference and `sakshi_err_*`, regenerate the
+  bundle. Breaking to the exported error surface → **target 2.5.0** (optionally
+  keep bare aliases for one minor). Detail:
+  [`issues/2026-06-23-err-timeout-enum-collision-namespace.md`](issues/2026-06-23-err-timeout-enum-collision-namespace.md).
 
-The clock-path items (timespec sizing in v2.2.9; Windows
+The `_sk_open` `O_RDWR → AO_WRONLY` agnos remap (filed 2026-07-08) and the
+clock-path items (timespec sizing in v2.2.9; Windows
 busy-spin + `GetTickCount64` removal in v2.2.10) are shipped — see
 [`CHANGELOG.md`](../../CHANGELOG.md).
