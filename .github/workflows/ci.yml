@@ -91,8 +91,7 @@ jobs:
     # aarch64 analog of the build-windows/wine gate. This lane was compile-only
     # until cyrius 6.1.16 cleared the upstream stdlib bug (the aarch64 codegen
     # path hit unresolved `vec_get` / `vec_len` and crashed the binary, exit
-    # 127); 6.1.16 builds clean and the static ELF runs under qemu. See
-    # docs/development/issues/2026-04-30-cyrius-lang-blockers.md.
+    # 127); 6.1.16 builds clean and the static ELF runs under qemu.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

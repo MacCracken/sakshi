@@ -1,6 +1,6 @@
 # Sakshi Development Roadmap
 
-> **Current: v2.4.6** (pin: cyrius 6.4.49). Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source — as of v2.2.10 even `src/clock.cyr` has no `#ifdef CYRIUS_TARGET_WIN` branch (PE now shares the calibrated-rdtsc timestamp path). The `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.3.0 adds the lock-free multi-producer `SK_OUT_ATOMIC_RING` target (interim unblock of item #4). v2.2.0 public API is stable.
+> **Current: v2.4.6** (pin: cyrius 6.4.49). Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source — as of v2.2.10 even `src/clock.cyr` has no `#ifdef CYRIUS_TARGET_WIN` branch (PE now shares the calibrated-rdtsc timestamp path). The `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.3.0 adds the lock-free multi-producer `SK_OUT_ATOMIC_RING` target. v2.2.0 public API is stable.
 >
 > Shipped history lives in [`CHANGELOG.md`](../../CHANGELOG.md). This file tracks only what's ahead.
 
@@ -20,28 +20,10 @@
 
 The single key=value emit (`sakshi_log_kv`) **landed** (folded from agnosys
 `logging.cyr` `log_msg_kv`) — composes `msg key=value` into one event routed
-through every output target (the lightweight cousin of upstream-blocked item
-#6, which needs generics for *typed* fields). The atomic ring buffer (the prior
-v2.3.0 lane) **shipped in v2.3.0** — `SK_OUT_ATOMIC_RING`,
-`fetch_add`-reservation MPSC writer, `sakshi_aring_*` single-reader API, benched
-at 1.0× the plain ring cost (no contention). See
-[`CHANGELOG.md`](../../CHANGELOG.md). Full per-CPU partitioning is still
-upstream-blocked (item #4 below).
-
----
-
-## Upstream-blocked — no firm version
-
-These items need cyrius compiler/stdlib work. Each will move into a minor lane once the upstream feature lands. Detailed status, severity, and workarounds: [`docs/development/issues/2026-04-30-cyrius-lang-blockers.md`](issues/2026-04-30-cyrius-lang-blockers.md).
-
-| # | Item | Cyrius feature needed | Best-effort estimate |
-|---|------|-----------------------|----------------------|
-| 2 | Deferred formatting (defmt-style) | String interning / `#strid` | No estimate |
-| 3 | Per-module log levels | `__FILE__` / `__MODULE__` / `#module` | No estimate |
-| 4 | Per-CPU ring buffers (full) — _MPSC atomic ring interim shipped in v2.3.0_ | `sched_getcpu` / `getcpu` syscall wrappers | No estimate |
-| 6 | Structured typed fields | Generics / templates / comptime layout | **Partial — monomorphized generics landed in cyrius 6.4.0** |
-
-Item #1 (compile-time log-level elimination) **shipped in v2.2.8** via the `#if SAKSHI_LEVEL >= n` threshold — cleared from this list. #4's MPSC atomic-ring interim **shipped in v2.3.0** (`SK_OUT_ATOMIC_RING`); only full per-CPU partitioning remains blocked on `sched_getcpu` (re-confirmed absent at 6.4.49). #6 (hook escape hatch from v2.1.0) has a functional sakshi-side workaround, and the 6.4.49 re-audit found cyrius **6.4.0 shipped monomorphized generics** (generic structs take scalar `i8/i16/i32/i64` or struct type-args; generic fns take scalar type-args) — enough to back a fixed-shape typed-field API in-tree via a generic struct schema, so #6 is now **partially unblocked** (struct type-args on fns, async generic fns, and non-scalar type-args are the remaining gaps). #2 is buildable on cyrius's `defmt`/interning but is a larger lift; #3 (`__FILE__`/`#module`) is still absent. Full unblock of the rest is upstream's call.
+through every output target. The atomic ring buffer **shipped in v2.3.0** —
+`SK_OUT_ATOMIC_RING`, `fetch_add`-reservation MPSC writer, `sakshi_aring_*`
+single-reader API, benched at 1.0× the plain ring cost (no contention). See
+[`CHANGELOG.md`](../../CHANGELOG.md).
 
 ---
 

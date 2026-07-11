@@ -9,37 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Toolchain pin → 6.4.49** (catch-up bump). The active `cycc` had already drifted
 to 6.4.49 while the manifest still pinned 6.4.26 — every build printed a
-`toolchain drift` warning. No source change: `src/` is untouched, and the
-distribution (`dist/sakshi.cyr`, built from `src/lib.cyr`) links only
-`lib/fnptr.cyr` + `lib/atomic.cyr` from the stdlib — both self-contained and
-byte-identical 6.4.26 → 6.4.49 — so the shipped surface is unchanged and the
-drift warning is now cleared. (The wider test/bench graph transitively touches
-more stdlib, e.g. `lib/assert.cyr` → `lib/syscalls.cyr`; all 78 + 2 cases pass
-green at 6.4.49.) Re-audited the cyrius language blockers against
-6.4.49 (last audit point was 6.1.16): **item #6 (structured typed fields) is now
-partially unblocked** — cyrius **6.4.0** shipped monomorphized generics; items
-#2/#3/#4 are unchanged.
+`toolchain drift` warning, now cleared. No behavior change: the only `src/` edit
+is a purged dead-link comment; the distribution (`dist/sakshi.cyr`, built from
+`src/lib.cyr`) links only `lib/fnptr.cyr` + `lib/atomic.cyr` from the stdlib —
+both self-contained and byte-identical 6.4.26 → 6.4.49 — so the shipped code is
+unchanged. (The wider test/bench graph transitively touches more stdlib, e.g.
+`lib/assert.cyr` → `lib/syscalls.cyr`; all 78 + 2 cases pass green at 6.4.49.)
 
 ### Changed
 
-- **Toolchain pin `6.4.26` → `6.4.49`.** No source change; `dist/sakshi.cyr`
-  regenerated for the version stamp only. Local `./lib` repointed from a stale
-  real-directory snapshot back to a symlink onto the 6.4.49 stdlib (the
-  gitignored convention).
-- **Roadmap reconciled with shipped state** — removed the `[P1] _sk_open O_RDWR`
-  cleanup item (fixed in 2.4.5); refreshed the status header (`v2.4.0` / pin
-  `6.2.1` → `v2.4.6` / pin `6.4.49`).
-- **Cyrius-blockers re-audit → 6.4.49**
-  (`docs/development/issues/2026-04-30-cyrius-lang-blockers.md`). Item #6 (typed
-  fields) moves **blocked → partial**: cyrius 6.4.0 landed monomorphized generics
-  (`CYRIUS_MONOMORPH`) — generic **structs** take scalar (`i8/i16/i32/i64`) or
-  struct type-args, generic **functions** take scalar type-args (struct type-args
-  on fns, async generic fns, and non-`i64` param re-emission are follow-ons). A
-  fixed-shape typed-field API is therefore feasible in-tree via a generic
-  **struct** schema — filed as a future minor, not built here. Items #2 (`#strid`
-  interning), #3
-  (`__FILE__`/`#module`), and #4 (`sched_getcpu`) remain absent at 6.4.49.
-  Audit point advanced 6.1.16 → 6.4.49.
+- **Toolchain pin `6.4.26` → `6.4.49`.** No behavior change; `dist/sakshi.cyr`
+  regenerated for the version stamp (and one purged comment). Local `./lib`
+  repointed from a stale real-directory snapshot back to a symlink onto the
+  6.4.49 stdlib (the gitignored convention).
+- **Retired `docs/development/issues/2026-04-30-cyrius-lang-blockers.md`** and the
+  roadmap's "Upstream-blocked" section. The doc had rotted into 5.x/6.1.x
+  "cleared" history plus speculative rows that were never filed as issues, needed
+  cyrius features that may never ship, or — like per-module log levels — were
+  logger features sakshi can build itself. None were real blockers, and a stale
+  doc like that just costs a future cycle re-litigating bad info. Dead references
+  to it purged from `src/output.cyr` and CI comments as well.
+- **Roadmap reconciled** — refreshed the status header (`v2.4.0` / pin `6.2.1` →
+  `v2.4.6` / pin `6.4.49`); dropped the shipped `[P1] _sk_open O_RDWR` cleanup
+  item (fixed in 2.4.5).
 - Archived the resolved trace-id 128-bit W3C issue (shipped in 2.4.4) to
   `docs/development/issues/archive/`.
 
