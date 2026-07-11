@@ -6,46 +6,53 @@
 
 ---
 
-## Next minor — unscheduled
+## Minor arcs — ahead
 
-- **Env-driven log level (`sakshi_init_from_env`).** Read a level name
-  (`trace`/`debug`/`info`/`warn`/`error`/`off`) from an env var (e.g.
-  `SAKSHI_LOG`) and call `sakshi_set_level`. Folded-from-agnosys context:
-  agnosys `logging.cyr` had `log_init_from_env` reading `AGNOSYS_LOG` by
-  hand-parsing `/proc/self/environ` — **Linux-eccentric** (that path doesn't
-  exist on agnos/macOS/Windows). The sakshi version should go through cyrius's
-  cross-target `getenv` instead, so it's portable. **Deferred:** no consumer
-  needs it yet (the agnosys→agnodrm fold dropped `logging.cyr`'s only caller,
-  `audit`, into kavach). Pick up when a consumer wants env-driven verbosity.
+Feature arcs, **each a self-contained minor (`x.Y.0`), not a bundle.** Per-module
+levels is the recommended next; the rest sequence by consumer pull.
 
-The single key=value emit (`sakshi_log_kv`) **landed** (folded from agnosys
-`logging.cyr` `log_msg_kv`) — composes `msg key=value` into one event routed
-through every output target. The atomic ring buffer **shipped in v2.3.0** —
-`SK_OUT_ATOMIC_RING`, `fetch_add`-reservation MPSC writer, `sakshi_aring_*`
-single-reader API, benched at 1.0× the plain ring cost (no contention). See
-[`CHANGELOG.md`](../../CHANGELOG.md).
+### Per-module log levels — next up
+
+Filtering today is a single global `_sk_log_level` (`trace.cyr:55`, checked in
+`_sk_log` at `:70`). Add a per-module override: `sakshi_set_module_level(mod,
+level)` backed by a small `_sk_module_level[]` table, and a module-aware log path
+that honors the override and falls back to the global. The consumer supplies
+`mod` as its own small int constant (e.g. `#define MOD_NET 3`) — **explicit ids,
+no `__FILE__`/`#module`.** That is the design the retired blockers doc rejected
+("a consumer-threaded `mod_id` … an API change we don't want") while waiting on an
+upstream feature that may never ship; reversed here — sakshi is the logger, so it
+provides the knob. Composes with the compile-time `SAKSHI_LEVEL` elimination.
+
+### Error + log composition — `sakshi_log_err`
+
+`error.cyr` (packed i64 errors) and `trace.cyr` (leveled logging) don't meet: no
+single call logs a message *with* its decoded error. Add `sakshi_log_err(level,
+msg, len, err)` that emits the message plus the unpacked code / category / context
+(reusing the `sakshi_log_kv` field path). Additive; the two halves of sakshi's
+remit finally compose.
+
+### Rate-limit / sampling — gated on a consumer driver
+
+Drop-repeated (suppress runs of identical events) and/or 1-in-K sampling for
+high-volume trace paths. A real logger capability, but **no consumer needs it
+yet** — scheduled only when one does, not built on spec.
+
+### Env-driven log level — `sakshi_init_from_env` (deferred)
+
+Read a level name (`trace`/`debug`/…/`off`) from an env var (`SAKSHI_LOG`) via
+cyrius's cross-target `getenv` — not the Linux-only `/proc/self/environ` the
+agnosys `log_init_from_env` original hand-parsed — and call `sakshi_set_level`.
+**Deferred:** no consumer needs it (the agnosys→agnodrm fold dropped its only
+caller, `audit`, into kavach).
 
 ---
 
-## Cleanup / hardening — no firm version
+## 3.0 — ecosystem coordination (no sakshi code change)
 
-- **[3.0 — parked] `ErrCode` enum members are bare globals — ecosystem-wide name
-  collision** — `src/error.cyr:26`. Filed 2026-06-23 (hoosh consumer). Cyrius enum
-  members are global constants, so sakshi's domain-agnostic `ERR_OK`/`ERR_TIMEOUT`/…
-  collide by name (different values) with other libs' error enums (yukti
-  `ERR_TIMEOUT=9`, ai-hwaccel `=3` vs sakshi `=5`) under textual-include
-  last-definition-wins; `sakshi_err_new` packs the literal into the low-16 `code`
-  field, so a foreign winner silently repacks a wrong value. `ErrCat` (`ERR_CAT_*`)
-  is already prefixed and does **not** collide. **3.0.0-era** — any rename is
-  breaking across every downstream consumer, so the ecosystem coordination belongs
-  at a major. **Direction chosen — Option B:** sakshi, the **base logger**, keeps
-  the canonical bare names; downstream libs namespace theirs, so sakshi's own code
-  does **not** change. The enforcing lint gate is **filed** as cyrius proposal
-  `2026-07-11-error-enum-namespace-lint-gate.md`; the README + vidya ownership docs
-  follow once its mechanism settles. Detail:
+- **Error-enum namespace ownership — decided (Option B).** sakshi, the base
+  logger, keeps the canonical bare `ERR_*`; downstream libs prefix theirs,
+  enforced by a cyrius lint gate (proposal filed 2026-07-11). **sakshi's own
+  surface does not change** — this is a watch item pending the cyrius gate + the
+  leaf-lib member renames, plus the README/vidya ownership docs once the gate's
+  mechanism settles. Detail:
   [`issues/2026-06-23-err-timeout-enum-collision-namespace.md`](issues/2026-06-23-err-timeout-enum-collision-namespace.md).
-
-The `_sk_open` `O_RDWR → AO_WRONLY` agnos remap (filed 2026-07-08) and the
-clock-path items (timespec sizing in v2.2.9; Windows
-busy-spin + `GetTickCount64` removal in v2.2.10) are shipped — see
-[`CHANGELOG.md`](../../CHANGELOG.md).
