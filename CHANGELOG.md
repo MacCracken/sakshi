@@ -5,6 +5,46 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.7] - 2026-07-29
+
+### Fixed — two internal helpers occupied cyrius overload-dispatch slots they had no relation to
+
+`_sk_write_int` and `_sk_write_str` are buffer-append primitives ("write an
+integer / a string into `buf` at `pos`, respecting `cap`, return the new `pos`").
+Neither has anything to do with `_sk_write(buf, len)`, the unrelated
+flush-to-output function in `output.cyr`.
+
+But in cyrius, **`_str` / `_int` / `_cstr` are reserved overload-dispatch
+suffixes**: the compiler rewrites a call `X(a, ...)` into `X_str` / `X_int` when
+arg 1 is of that type and the sibling exists, and it does **not** check that the
+sibling's arity matches the arguments supplied. So `_sk_write_int` and
+`_sk_write_str` had claimed the dispatch slots of `_sk_write` — a 2-parameter
+function — while taking 4 and 5 parameters respectively. Any
+`_sk_write(someStr, ...)` or `_sk_write(someInt, ...)` whose result was assigned
+would have been silently redirected into one of these, with the missing
+arguments bound to garbage. The compiler emits only a warning and still produces
+a binary.
+
+Renamed to `_sk_buf_write_number` and `_sk_buf_write_string`, which carry no
+reserved suffix. Both are `_`-prefixed internals and neither is `public`, so
+**there is no API change** — nothing outside sakshi could name them. 12
+occurrences across `src/format.cyr` and `src/output.cyr`. Both definitions now
+carry a note explaining why they may not be renamed back.
+
+**This was latent, not live**: every existing `_sk_write` call site passes a
+buffer address as arg 1, so the redirect never fired. It was a landmine that
+armed the moment any call site passed a `Str`- or int-typed first argument. The
+same defect was *live* in bayan and forced a breaking public rename there
+(bayan CHANGELOG [1.3.0]); the arity-blind dispatch itself is a cyrius bug,
+filed and being fixed compiler-side.
+
+Verified: 78 + 2 assertions pass, 0 failed. The renamed helpers format every log
+line, so the suite exercises both on every emitted record.
+
+### Changed
+
+- Toolchain pin **6.4.49 → 6.5.0** (the released head; clears the drift warning).
+
 ## [2.4.6] - 2026-07-11
 
 **Toolchain pin → 6.4.49** (catch-up bump). The active `cycc` had already drifted

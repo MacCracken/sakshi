@@ -210,14 +210,14 @@ fn sakshi_ring_decode_event(buf, buf_len, dst, dst_cap, out_text_len): i64 {
     # Format: [timestamp] [LEVEL] msg\n
     var pos: i64 = 0;
     if (pos < dst_cap) { store8(dst + pos, 91); pos = pos + 1; }
-    pos = _sk_write_int(dst, pos, dst_cap, ts);
+    pos = _sk_buf_write_number(dst, pos, dst_cap, ts);
     if (pos < dst_cap) { store8(dst + pos, 93); pos = pos + 1; }
     if (pos < dst_cap) { store8(dst + pos, 32); pos = pos + 1; }
     if (pos < dst_cap) { store8(dst + pos, 91); pos = pos + 1; }
-    pos = _sk_write_str(dst, pos, dst_cap, lstr, llen);
+    pos = _sk_buf_write_string(dst, pos, dst_cap, lstr, llen);
     if (pos < dst_cap) { store8(dst + pos, 93); pos = pos + 1; }
     if (pos < dst_cap) { store8(dst + pos, 32); pos = pos + 1; }
-    pos = _sk_write_str(dst, pos, dst_cap, buf + _SK_BIN_HDR_SIZE, msg_len);
+    pos = _sk_buf_write_string(dst, pos, dst_cap, buf + _SK_BIN_HDR_SIZE, msg_len);
     if (pos < dst_cap) { store8(dst + pos, 10); pos = pos + 1; }
 
     store64(out_text_len, pos);
