@@ -5,6 +5,26 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.8] - Unreleased
+
+
+### Fixed — `_sk_fmt_int` emitted a bare `-` for `i64::MIN`
+
+`n = 0 - n` is a no-op at `i64::MIN`: two's-complement negation of the most negative
+value overflows back to itself. So `n` stayed negative, both the `n == 0` guard and the
+`while (n > 0)` digit loop were skipped, and the function returned length 1 having
+written only the sign byte. A valid i64 in, an unparseable token out, with no error
+raised at any layer.
+
+The sign is now a flag only — `n` is never negated. Digits are extracted from the
+negative value and each digit negated (`d = n % 10; if (d < 0) { d = 0 - d; }`), with
+the loop condition `!= 0` rather than `> 0`. The condition is the load-bearing half.
+Truncation toward zero for negative `/` and `%` was verified on x86_64, aarch64 and the
+cx bytecode backend before relying on it.
+
+Reported against cyrius, which carries the identical defect in six of its own decimal
+formatters; this is the upstream half of that sweep (cyrius 6.5.8).
+
 ## [2.4.7] - 2026-07-29
 
 ### Fixed — two internal helpers occupied cyrius overload-dispatch slots they had no relation to
