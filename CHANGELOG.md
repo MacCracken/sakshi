@@ -5,8 +5,73 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.4.8] - Unreleased
+## [2.4.9] - 2026-08-09
 
+### Fixed — `sakshi_log_kv` flattened its fields before the emit hook could see them
+
+`sakshi_set_emit_hook` is documented as the way for "downstream consumers (OTel,
+custom aggregators, in-memory sinks) to receive structured events without sakshi
+knowing their format". `sakshi_log_kv` defeated that: it composed
+`msg + ' ' + key + '=' + value` into a 256-byte scratch **before** calling
+`_sk_emit`, so a subscriber received one flat string with no way back to the
+pieces. `"deploy failed reason=oom"` was indistinguishable from a message that
+merely happens to contain `reason=oom`.
+
+Reported by agnosai, whose JSON log formatter needs `reason` as its own member
+and could only emit
+`"message":"LLM client configured (lazy — init on first use) hoosh_url=http://…"`
+where its Rust parity oracle emits a separate `hoosh_url` field.
+
+For `SK_OUT_HOOK` the message is now passed **unflattened**, with a fields block
+in the hook's sixth argument:
+
+```
+offset 0                count            (i64, >= 1)
+offset 8 + i*32 + 0     key pointer
+offset 8 + i*32 + 8     key byte length
+offset 8 + i*32 + 16    value pointer
+offset 8 + i*32 + 24    value byte length
+```
+
+`level` is the discriminator and is never ambiguous — 0-5 are log events (sixth
+= 0 or a fields pointer), 10-11 are spans (sixth = the exit duration, as
+before). No accessor functions are exported: adding public symbols would make
+this a minor release, and the layout is four `load64`s.
+
+⚠ **The block lives on the caller's stack and dies when the hook returns.** A
+subscriber that wants to keep a field must copy the bytes, not the pointer —
+the same contract `msg` has always had.
+
+⚠ **Behaviour change for existing hook subscribers**, scoped to
+`sakshi_log_kv` and to `SK_OUT_HOOK`. Every other target — stderr, file, ring,
+atomic ring, UDP — still receives the composed text byte for byte, which
+`tests/tcyr/sakshi.tcyr` now asserts through the ring decoder. A subscriber
+that ignores the sixth argument sees `msg` without the ` key=value` tail; to
+keep the old rendering, append message, space, key, `=`, value.
+
+### Fixed — `sakshi_log_kv` truncated at 256 bytes in silence
+
+A message plus its pair longer than the scratch was cut with no marker and no
+way for the caller to know. The buffer stays fixed (this is the
+zero-allocation hot path), but the loss is now reported: the return is 0 when
+everything was emitted, otherwise the number of bytes that did not fit. Every
+existing caller ignores the return, and 0 still means success.
+
+### Performance
+
+Measured on this box, 1,000,000 iterations, `tests/bcyr/sakshi.bcyr`:
+
+| benchmark | 2.4.8 | 2.4.9 | |
+|---|---|---|---|
+| `log_kv_hook` | 36 ns | **25 ns** | **−31%** — the hook path composes nothing |
+| `log_kv_ring` | 74 ns | 75 ns | +1 ns for the target check and the truncation arithmetic |
+
+`log_kv_hook` now matches `hook_emit` (25 ns), which is the floor: both do one
+`fncall6` and nothing else. Both benchmarks are new in 2.4.9; the 2.4.8 column
+was measured by reverting `src/trace.cyr` alone and re-running the same file,
+three runs each.
+
+## [2.4.8] - 2026-08-05
 
 ### Fixed — `_sk_fmt_int` emitted a bare `-` for `i64::MIN`
 

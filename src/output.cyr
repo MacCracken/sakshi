@@ -438,14 +438,51 @@ fn sakshi_ipv4(a, b, c, d): i64 {
 # to receive structured events without sakshi knowing their format.
 #
 # Hook signature (6 args, matches fncall6 ABI):
-#   fn my_hook(ts, level, category, msg, msg_len, elapsed_ns)
-#     ts         — monotonic nanoseconds, shared across the event
-#     level      — SK_* log level, or SK_SPAN_ENTER (10) / SK_SPAN_EXIT (11)
-#     category   — ERR_CAT_* for log events, 0 for span events
-#     msg        — message / span-name pointer (NOT NUL-terminated)
-#     msg_len    — byte length of msg
-#     elapsed_ns — span EXIT duration, 0 otherwise
+#   fn my_hook(ts, level, category, msg, msg_len, sixth)
+#     ts       — monotonic nanoseconds, shared across the event
+#     level    — SK_* log level, or SK_SPAN_ENTER (10) / SK_SPAN_EXIT (11)
+#     category — ERR_CAT_* for log events, 0 for span events
+#     msg      — message / span-name pointer (NOT NUL-terminated)
+#     msg_len  — byte length of msg
+#     sixth    — SPAN events (level >= SK_SPAN_ENTER): the EXIT duration in ns.
+#                LOG events (level <= SK_TRACE): 0, or a **fields block**
+#                pointer — see below. `level` is the discriminator and is
+#                never ambiguous: 0-5 are logs, 10-11 are spans.
 # Return value is ignored.
+#
+# ## Fields block (2.4.9)
+#
+# `sakshi_log_kv` used to render `key=value` into the message text *before*
+# reaching this hook, so a subscriber received one flat string and could not
+# recover the pieces — reported by agnosai, which needs them as separate JSON
+# members. It now passes the message **unflattened** and describes the fields
+# through the sixth argument:
+#
+#   offset 0                 count            (i64, >= 1)
+#   offset 8  + i*32 + 0     key pointer      (NOT NUL-terminated)
+#   offset 8  + i*32 + 8     key byte length
+#   offset 8  + i*32 + 16    value pointer    (NOT NUL-terminated)
+#   offset 8  + i*32 + 24    value byte length
+#
+# No accessor functions are exported on purpose: this is a patch release and
+# adding public symbols would make it a minor one. Read it with `load64`:
+#
+#   var n = load64(fields);
+#   var key     = load64(fields + 8 + i * 32);
+#   var key_len = load64(fields + 8 + i * 32 + 8);
+#   var val     = load64(fields + 8 + i * 32 + 16);
+#   var val_len = load64(fields + 8 + i * 32 + 24);
+#
+# ⚠ **The block lives on the caller's stack and dies when the hook returns.**
+# It is valid for the duration of the call and not one instruction longer. A
+# subscriber that wants to keep a field must copy the bytes out, not the
+# pointer. Same contract `msg` has always had.
+#
+# ⚠ **Behaviour change for existing hook subscribers**, scoped to
+# `sakshi_log_kv` and to `SK_OUT_HOOK` only — every other output target still
+# receives the flattened text, byte for byte as before. A subscriber that
+# ignores the sixth argument now sees `msg` without the ` key=value` tail. To
+# keep the old rendering, append it: message, space, key, `=`, value.
 #
 # Consumers of the generated dist/sakshi.cyr bundle MUST also
 # `include "lib/fnptr.cyr"` before including sakshi (the bundle

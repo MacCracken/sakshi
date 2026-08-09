@@ -149,8 +149,41 @@ fn sakshi_trace(msg, msg_len): i64 {
 # are explicit byte counts (sakshi convention — no strlen, no NUL requirement).
 # Folded from agnosys logging.cyr (log_msg_kv) in the agnosys → agnodrm
 # decomposition; sakshi is the ecosystem logging home.
+#
+# ## 2.4.9 — the hook target no longer receives the flattened text
+#
+# Flattening reaches the hook as one string, and a subscriber cannot get the
+# pieces back: `"deploy failed reason=oom"` is indistinguishable from a message
+# that merely happens to contain `reason=oom`. Reported by agnosai, whose JSON
+# formatter needs `reason` as its own member. So for `SK_OUT_HOOK` the message
+# is passed **unflattened** alongside a fields block in the hook's sixth
+# argument — the layout is documented on `sakshi_set_emit_hook`. Every other
+# target still gets the composed text, byte for byte as before.
+#
+# ## Return value — 0, or the number of bytes that did NOT fit
+#
+# The 256-byte scratch used to truncate in silence: a long message plus its
+# pair was cut with no marker and no way for the caller to know. The buffer
+# stays fixed (this is the zero-allocation hot path), but the loss is now
+# reported. Every existing caller ignores the return, and 0 still means "all of
+# it was emitted". The hook path never truncates — it does not compose.
 fn sakshi_log_kv(level, msg, msg_len, key, key_len, val, val_len): i64 {
     if (level > _sk_log_level) { return 0; }
+
+    if (_sk_output_target == SK_OUT_HOOK) {
+        if (_sk_emit_hook != 0) {
+            # count, then one 32-byte {key, key_len, val, val_len} record.
+            var fields[40];
+            store64(&fields, 1);
+            store64(&fields + 8, key);
+            store64(&fields + 16, key_len);
+            store64(&fields + 24, val);
+            store64(&fields + 32, val_len);
+            fncall6(_sk_emit_hook, _sk_now_ns(), level, 0, msg, msg_len, &fields);
+        }
+        return 0;
+    }
+
     var buf[256];
     var pos = 0;
     var i = 0;
@@ -177,5 +210,10 @@ fn sakshi_log_kv(level, msg, msg_len, key, key_len, val, val_len): i64 {
         i = i + 1;
     }
     _sk_emit(level, 0, &buf, pos);
+
+    # The composed line is msg + ' ' + key + '=' + val. Anything past 256 was
+    # dropped; report how much rather than losing it silently.
+    var want = msg_len + 1 + key_len + 1 + val_len;
+    if (want > 256) { return want - 256; }
     return 0;
 }

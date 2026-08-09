@@ -73,6 +73,24 @@ fn bench_hook_emit() {
     return 0;
 }
 
+# 2.4.9 — sakshi_log_kv's two paths.
+#
+# `log_kv_hook` takes the new fast path: the hook receives the message
+# unflattened plus a 40-byte stack fields block, so nothing is composed. It
+# should be at or below `hook_emit`, since it does the same dispatch.
+#
+# `log_kv_ring` takes the composing path, which every non-hook target still
+# uses. Its job here is to prove the 2.4.9 branch did NOT slow it down.
+fn bench_log_kv_hook() {
+    sakshi_log_kv(SK_INFO, "hk", 2, "k", 1, "v", 1);
+    return 0;
+}
+
+fn bench_log_kv_ring() {
+    sakshi_log_kv(SK_INFO, "hk", 2, "k", 1, "v", 1);
+    return 0;
+}
+
 # ================================================================
 # Ring write path — plain (SK_OUT_BUFFER) vs atomic (SK_OUT_ATOMIC_RING).
 # Both share a precomputed ts so the measured delta is pure write cost.
@@ -152,6 +170,10 @@ sakshi_set_emit_hook(&_bench_noop_hook);
 var b8 = bench_new("hook_emit");
 bench_run_batch(b8, &bench_hook_emit, 10000, 100);
 bench_report(b8);
+
+var b8b = bench_new("log_kv_hook");
+bench_run_batch(b8b, &bench_log_kv_hook, 10000, 100);
+bench_report(b8b);
 sakshi_clear_emit_hook();
 if (devnull >= 0) { sakshi_set_output_fd(devnull); }
 
@@ -165,6 +187,14 @@ bench_report(b9);
 var b10 = bench_new("aring_write");
 bench_run_batch(b10, &bench_aring_write, 10000, 100);
 bench_report(b10);
+
+# The composing path, measured against the ring so no syscall is in the way.
+sakshi_output_buffer();
+var b11 = bench_new("log_kv_ring");
+bench_run_batch(b11, &bench_log_kv_ring, 10000, 100);
+bench_report(b11);
+sakshi_ring_clear();
+if (devnull >= 0) { sakshi_set_output_fd(devnull); }
 
 # Cleanup
 if (devnull >= 0) { syscall(_SK_SYS_CLOSE, devnull); }

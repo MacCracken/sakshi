@@ -12,6 +12,12 @@ echo "$NEW_VERSION" > VERSION
 # with a stale literal.
 
 # CHANGELOG.md — add section header if missing.
+#
+# ⚠ DATE THE HEADING WHEN YOU TAG. The awk below strips every
+# "## [X] - Unreleased" stub, so a released-but-still-"Unreleased" heading is
+# DELETED by the next bump and its notes silently fold into the new version.
+# That is exactly what happened to 2.4.8 (tagged 2026-08-05, heading left as
+# Unreleased) and was caught during the 2.4.9 bump.
 # `sed -i "/PATTERN/i ..."` inserts before EVERY matching line, not just the
 # first, so we use awk to insert exactly once before the first ^## [ heading.
 # Also strips any pre-existing "## [X] - Unreleased" stubs (left over from the

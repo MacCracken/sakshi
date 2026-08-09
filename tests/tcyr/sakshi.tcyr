@@ -253,7 +253,15 @@ test_group("kv logging");
 var kv_count: i64 = 0;
 var kv_len: i64 = 0;
 var kv_buf[64];
-fn _kv_hook(ts, level, category, msg, msg_len, elapsed_ns) {
+# The sixth argument. For a LOG event it is 0 or a fields-block pointer; the
+# block is the caller's stack and dies when the hook returns, so everything
+# wanted is copied out here rather than kept.
+var kv_nfields: i64 = 0;
+var kv_key: i64 = 0;
+var kv_key_len: i64 = 0;
+var kv_val: i64 = 0;
+var kv_val_len: i64 = 0;
+fn _kv_hook(ts, level, category, msg, msg_len, sixth) {
     kv_count = kv_count + 1;
     kv_len = msg_len;
     var i = 0;
@@ -262,25 +270,88 @@ fn _kv_hook(ts, level, category, msg, msg_len, elapsed_ns) {
         store8(&kv_buf + i, load8(msg + i));
         i = i + 1;
     }
+    kv_nfields = 0;
+    if (sixth != 0) {
+        kv_nfields = load64(sixth);
+        if (kv_nfields > 0) {
+            kv_key = load8(load64(sixth + 8));
+            kv_key_len = load64(sixth + 16);
+            kv_val = load8(load64(sixth + 24));
+            kv_val_len = load64(sixth + 32);
+        }
+    }
     return 0;
 }
 
 sakshi_set_emit_hook(&_kv_hook);
 sakshi_set_level(SK_INFO);
-sakshi_log_kv(SK_INFO, "hi", 2, "k", 1, "v", 1);   # composes "hi k=v"
+# 2.4.9: the hook receives the message UNFLATTENED plus a fields block. The
+# flattened "hi k=v" is what every other target still gets — asserted below.
+assert_eq(sakshi_log_kv(SK_INFO, "hi", 2, "k", 1, "v", 1), 0, "kv returns 0 when nothing was lost");
 assert_eq(kv_count, 1, "kv emitted one event");
-assert_eq(kv_len, 6, "kv composed 'hi k=v' = 6 bytes");
+assert_eq(kv_len, 2, "the hook gets the bare message, not the composed line");
 assert_eq(load8(&kv_buf), 104, "kv byte0 is 'h'");
-assert_eq(load8(&kv_buf + 2), 32, "kv separator is space");
-assert_eq(load8(&kv_buf + 3), 107, "kv key byte is 'k'");
-assert_eq(load8(&kv_buf + 4), 61, "kv pair joiner is '='");
-assert_eq(load8(&kv_buf + 5), 118, "kv value byte is 'v'");
+assert_eq(load8(&kv_buf + 1), 105, "kv byte1 is 'i'");
+assert_eq(kv_nfields, 1, "and one field alongside it");
+assert_eq(kv_key, 107, "whose key is 'k'");
+assert_eq(kv_key_len, 1, "one byte long");
+assert_eq(kv_val, 118, "whose value is 'v'");
+assert_eq(kv_val_len, 1, "also one byte");
+
+# A plain log event carries NO fields block — the sixth argument stays 0, so a
+# subscriber can tell "no fields" from "one empty field".
+sakshi_info("plain", 5);
+assert_eq(kv_count, 2, "a plain info reached the hook");
+assert_eq(kv_nfields, 0, "and carried no fields block");
 
 # Runtime level gate: a DEBUG kv under an INFO ceiling must not emit.
 sakshi_log_kv(SK_DEBUG, "x", 1, "k", 1, "v", 1);
-assert_eq(kv_count, 1, "kv respects runtime level filter");
+assert_eq(kv_count, 2, "kv respects runtime level filter");
 
 sakshi_clear_emit_hook();
+
+# ⚠ Every NON-hook target still receives the composed "msg key=value" text,
+# byte for byte as before 2.4.9. Checked through the ring buffer, whose decoder
+# hands the event text back.
+sakshi_output_buffer();
+sakshi_ring_clear();
+sakshi_log_kv(SK_INFO, "hi", 2, "k", 1, "v", 1);
+assert_eq(sakshi_ring_event_count(), 1, "one ring event");
+var kvraw[512];
+var kvn = sakshi_ring_read_raw(&kvraw, 512);
+# 12-byte binary header + a 6-byte payload: the composed line is intact on the
+# wire, which is the thing 2.4.9 must not have changed.
+assert_eq(kvn, 18, "12-byte header + the 6-byte composed payload");
+var kvtext[256];
+var kvtext_len: i64 = 0;
+sakshi_ring_decode_event(&kvraw, kvn, &kvtext, 256, &kvtext_len);
+# decode_event renders a display line ("[ts] [INFO] hi k=v\n"), so the payload
+# sits just before the trailing newline. Indexed from the end so a wider
+# timestamp cannot break this.
+assert_gt(kvtext_len, 7, "the decoded line is longer than the payload");
+assert_eq(load8(&kvtext + kvtext_len - 1), 10, "the decoded line ends with a newline");
+assert_eq(load8(&kvtext + kvtext_len - 7), 104, "the composed tail starts 'h'");
+assert_eq(load8(&kvtext + kvtext_len - 6), 105, "then 'i'");
+assert_eq(load8(&kvtext + kvtext_len - 5), 32, "then the space separator");
+assert_eq(load8(&kvtext + kvtext_len - 4), 107, "the key");
+assert_eq(load8(&kvtext + kvtext_len - 3), 61, "the '=' joiner");
+assert_eq(load8(&kvtext + kvtext_len - 2), 118, "and the value");
+sakshi_ring_clear();
+
+# ⚠ Truncation is REPORTED, not silent. The scratch is 256 bytes and the
+# composed line is msg + ' ' + key + '=' + value, so a 300-byte message with a
+# 1-byte key and value composes to 304 and loses exactly 304 - 256 = 48 bytes.
+var longmsg[320];
+var li = 0;
+while (li < 320) { store8(&longmsg + li, 97); li = li + 1; }
+assert_eq(sakshi_log_kv(SK_INFO, &longmsg, 300, "k", 1, "v", 1), 48,
+"kv reports the 48 bytes that did not fit");
+assert_eq(sakshi_log_kv(SK_INFO, &longmsg, 252, "k", 1, "v", 1), 0,
+"and reports 0 at exactly 256 composed bytes");
+assert_eq(sakshi_log_kv(SK_INFO, &longmsg, 253, "k", 1, "v", 1), 1,
+"one byte over is one byte reported");
+sakshi_ring_clear();
+
 sakshi_set_output_fd(2);
 
 # ================================================================
