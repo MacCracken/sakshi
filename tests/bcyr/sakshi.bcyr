@@ -91,6 +91,22 @@ fn bench_log_kv_ring() {
     return 0;
 }
 
+# The same two paths at a REALISTIC payload. The 2-byte variants above barely
+# touch the composing loop, so they understate what the hook path skips —
+# composition is O(msg + key + value). These sizes are agnosai's actual startup
+# line: a 21-byte message, a 9-byte key, a 21-byte URL value.
+fn bench_log_kv_hook_wide() {
+    sakshi_log_kv(SK_INFO, "LLM client configured", 21,
+    "hoosh_url", 9, "http://127.0.0.1:8088", 21);
+    return 0;
+}
+
+fn bench_log_kv_ring_wide() {
+    sakshi_log_kv(SK_INFO, "LLM client configured", 21,
+    "hoosh_url", 9, "http://127.0.0.1:8088", 21);
+    return 0;
+}
+
 # ================================================================
 # Ring write path — plain (SK_OUT_BUFFER) vs atomic (SK_OUT_ATOMIC_RING).
 # Both share a precomputed ts so the measured delta is pure write cost.
@@ -174,6 +190,10 @@ bench_report(b8);
 var b8b = bench_new("log_kv_hook");
 bench_run_batch(b8b, &bench_log_kv_hook, 10000, 100);
 bench_report(b8b);
+
+var b8c = bench_new("log_kv_hook_wide");
+bench_run_batch(b8c, &bench_log_kv_hook_wide, 10000, 100);
+bench_report(b8c);
 sakshi_clear_emit_hook();
 if (devnull >= 0) { sakshi_set_output_fd(devnull); }
 
@@ -193,6 +213,11 @@ sakshi_output_buffer();
 var b11 = bench_new("log_kv_ring");
 bench_run_batch(b11, &bench_log_kv_ring, 10000, 100);
 bench_report(b11);
+sakshi_ring_clear();
+
+var b12 = bench_new("log_kv_ring_wide");
+bench_run_batch(b12, &bench_log_kv_ring_wide, 10000, 100);
+bench_report(b12);
 sakshi_ring_clear();
 if (devnull >= 0) { sakshi_set_output_fd(devnull); }
 

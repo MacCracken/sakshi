@@ -5,7 +5,27 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.4.9] - 2026-08-09
+## [2.4.10] - 2026-08-09
+
+> 2.4.9 was committed but never tagged. It is folded in here rather than
+> released, because its benchmark numbers were measured against a stale
+> toolchain — see *Performance*.
+
+### Changed — toolchain pinned to cyrius 6.5.15, and `vec` declared
+
+The `[package].cyrius` pin was **6.5.0** while the installed compiler was
+6.5.15, and the developer `lib/` was a symlink into the **6.4.49** install. So
+this repo was being built and measured against a language two minors behind the
+one it is folded into — which for a stdlib repo makes the test and benchmark
+results describe a compiler that is not the one the artifact lands on. Pin
+bumped to 6.5.15; `lib/` is now a real directory populated by `cyrius deps`,
+matching what CI already produces.
+
+`[deps].stdlib` gains **`vec`**. `lib/fmt.cyr` and `lib/bench.cyr` — both
+already declared — call `vec_len` / `vec_get`, and the build emitted two
+`undefined function` warnings. The stale symlink had been **masking** the gap by
+exposing all 106 stdlib files instead of the 18 this project declares; a correct
+lean `lib/` surfaced it immediately.
 
 ### Fixed — `sakshi_log_kv` flattened its fields before the emit hook could see them
 
@@ -59,17 +79,28 @@ existing caller ignores the return, and 0 still means success.
 
 ### Performance
 
-Measured on this box, 1,000,000 iterations, `tests/bcyr/sakshi.bcyr`:
+Measured on this box, **cyrius 6.5.15**, 1,000,000 iterations,
+`tests/bcyr/sakshi.bcyr`. All four benchmarks are new here; the 2.4.8 column
+comes from checking out `src/trace.cyr` at `55278da` and re-running the same
+file, three runs each way.
 
-| benchmark | 2.4.8 | 2.4.9 | |
+| benchmark | 2.4.8 | 2.4.10 | |
 |---|---|---|---|
-| `log_kv_hook` | 36 ns | **25 ns** | **−31%** — the hook path composes nothing |
-| `log_kv_ring` | 74 ns | 75 ns | +1 ns for the target check and the truncation arithmetic |
+| `log_kv_hook` | 37 ns | **25 ns** | **−34%** |
+| `log_kv_hook_wide` | 132 ns | **25 ns** | **−81%** |
+| `log_kv_ring` | 78 ns | 76 ns | noise — the composing path is unchanged |
+| `log_kv_ring_wide` | 272 ns | 268 ns | noise |
 
-`log_kv_hook` now matches `hook_emit` (25 ns), which is the floor: both do one
-`fncall6` and nothing else. Both benchmarks are new in 2.4.9; the 2.4.8 column
-was measured by reverting `src/trace.cyr` alone and re-running the same file,
-three runs each.
+The `_wide` pair uses agnosai's real startup line — a 21-byte message, a 9-byte
+key, a 21-byte URL value — and is where the win actually lives: composition is
+O(msg + key + value), so skipping it is worth more the more there is to skip.
+The hook path is flat at 25 ns either way because it does one `fncall6` and
+nothing else, which is exactly `hook_emit`'s cost.
+
+⚠ An earlier draft of this table claimed **36 → 25 ns (−31%)** from a 2-byte
+payload measured on the old 6.5.0 pin. Both halves were wrong: the payload was
+too small to exercise the composing loop, and the toolchain was not the one this
+ships against. Re-measured after the pin bump.
 
 ## [2.4.8] - 2026-08-05
 
