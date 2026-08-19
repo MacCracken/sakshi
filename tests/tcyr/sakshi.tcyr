@@ -170,13 +170,29 @@ sakshi_set_level(SK_INFO);
 # Span overflow
 # ================================================================
 test_group("span overflow (16-deep)");
+assert_eq(_sk_spans_dropped_count(), 0, "no drops before overflow");
 for (var si = 0; si < 16; si = si + 1) {
     sakshi_span_enter("fill", 4);
 }
 assert_eq(sakshi_span_depth(), 16, "depth at max");
-# 17th enter should be silently ignored
-sakshi_span_enter("overflow", 8);
+
+# 2.4.11: the 17th enter is still REFUSED (depth is unchanged, and the
+# enter/exit pairing semantics are deliberately untouched in a patch) — but
+# it is no longer SILENT. It returns non-zero and the first drop emits a
+# one-shot warning, so a consumer losing traces has something to find.
+# Before this, a caller with an unbalanced enter burned one of 16 slots
+# permanently and after 16 all tracing stopped with no diagnostic anywhere.
+var over = sakshi_span_enter("overflow", 8);
+assert(over != 0, "17th enter reports the drop");
 assert_eq(sakshi_span_depth(), 16, "depth still 16");
+assert_eq(_sk_spans_dropped_count(), 1, "drop counted");
+
+# The counter is cumulative, and the warning is one-shot (not asserted here
+# beyond the count — the ring decoder below covers emission).
+sakshi_span_enter("overflow2", 9);
+assert_eq(_sk_spans_dropped_count(), 2, "drops accumulate");
+assert_eq(sakshi_span_depth(), 16, "depth still 16 after second drop");
+
 # unwind all
 for (var si = 0; si < 16; si = si + 1) {
     sakshi_span_exit();

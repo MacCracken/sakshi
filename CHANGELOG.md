@@ -5,6 +5,62 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.11] - 2026-08-19
+
+### Changed — toolchain pinned to cyrius 6.5.29
+
+`[package].cyrius` was **6.5.15** while the shipping toolchain is 6.5.29, the
+same drift 2.4.10 fixed one cycle earlier. Re-pinned; `lib/` re-resolved.
+
+### Fixed — a full span stack stopped all tracing without saying anything
+
+`sakshi_span_enter` pushes onto a fixed 16-entry stack behind
+`_sk_span_depth`, which is a module global and is **never reset**. On overflow
+it returned `0` — the same value it returns on success — and emitted nothing.
+
+That made the failure mode invisible in the worst way. A caller with an
+unbalanced `sakshi_span_enter` / `sakshi_span_exit` pair does not lose one
+span; it burns one of the 16 slots **permanently, for the life of the
+process**. After 16 such calls `sakshi_span_enter` is a no-op forever and
+**all span tracing silently stops**. Before that point, each leaked slot makes
+the next `sakshi_span_exit` pop a frame it does not own, so span names and
+elapsed times are misattributed. Nothing anywhere reports any of this.
+
+Reported by **yukti 2.3.4**, whose P(-1) sweep found 18 unbalanced returns
+across 7 functions. Measured there by reading `sakshi_span_depth()` between
+calls: four error paths took the depth 0 → 4 and it never came back. Their
+`udev_monitor_run` — a daemon main loop — was `enter=1, exit=0`, leaking on
+its *success* path. Sixteen failed device ejects and that process has no
+tracing left.
+
+Now:
+
+- `sakshi_span_enter` returns **0 when the span was pushed** and a **non-zero
+  cumulative drop count when it was refused**, so a caller can detect it. This
+  is the same convention 2.4.10 gave `sakshi_log_kv` (0 = fully emitted,
+  non-zero = what did not fit). Every existing caller ignores the return, so
+  it is additive information, not a break.
+- The **first** drop emits a `sakshi_warn`. One-shot deliberately: a saturated
+  stack means the next call saturates too, and a warning per call is its own
+  log storm.
+
+⚠ **Enter/exit pairing semantics are deliberately UNCHANGED.** A refused enter
+is still refused, and `sakshi_span_depth()` behaves exactly as before — the
+existing 16-deep overflow test passes untouched. There is a stronger fix in
+which a refused enter is remembered and the *matching* exit is also skipped,
+which would keep names and elapsed times correctly attributed for a balanced
+caller that simply recurses past 16. That changes observable pairing behaviour
+for unbalanced callers, and this is a foundation library included by every
+AGNOS Cyrius project, so it is a **minor**, not a patch. Tracked for 2.5.0.
+
+`_sk_spans_dropped_count()` is intentionally left unprefixed and undocumented
+as public API — it exists for the test suite and for debugging lost traces.
+Promoting it to a documented accessor adds public surface and is likewise
+2.5.0 work.
+
+Tests: 101 (was 96, +5). Verified to fail when it should — reverting the drop
+accounting produces 3 failures.
+
 ## [2.4.10] - 2026-08-09
 
 > 2.4.9 was committed but never tagged. It is folded in here rather than
