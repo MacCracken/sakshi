@@ -5,6 +5,51 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.12] - 2026-08-30
+
+### Fixed — `sakshi_span_enter` validated only one end of its buffer
+
+`sakshi_span_enter` computes `offset = _sk_span_depth * 24` and writes three
+`store64`s there. It checked `_sk_span_depth >= _SK_MAX_SPANS` — the upper
+bound — but never the lower one. A **negative** depth therefore made `offset`
+negative, and the pushes landed **before** `_sk_span_stack`, corrupting
+whatever global precedes it.
+
+Demonstrated on 6.5.36: with the depth forced to `-1`, one
+`sakshi_span_enter("boom", 4)` changed the 8 bytes at
+`&_sk_span_stack - 24` from `11` to a name pointer. With the guard, the same
+probe leaves it untouched and the push recovers into slot 0.
+
+Balanced single-threaded use cannot produce a negative depth — `sakshi_span_exit`
+refuses to decrement below 0 — so this is defense-in-depth against the two ways
+it can happen anyway:
+
+- **Memory corruption from elsewhere in the process.** sakshi is the foundation
+  every AGNOS Cyrius project includes, so it is often the first thing running
+  when something else has already gone wrong. Scribbling further is the wrong
+  response to a corrupt global.
+- **A contract violation the library cannot enforce.** sakshi is single-threaded
+  by contract (`src/lib.cyr`), but `sakshi_span_exit` is an unguarded
+  read-modify-write: two threads passing the `<= 0` check together both
+  decrement, leaving the depth at `-1`. The contract still stands — this just
+  means breaking it costs you misattributed spans rather than a corrupted
+  neighbouring global.
+
+This is the buffer rule CLAUDE.md already mandates ("every `var buf[N]` and
+`alloc(N)` verified: N is in BYTES, max access offset < N") applied to the end
+that was missed. Surfaced by a samay v1.0.4 concurrency audit that was reading
+sakshi's global state as a dependency.
+
+Six regression assertions added, pinning both a `-1` and a deeply negative
+depth (107 assertions total, was 101).
+
+### Changed — toolchain pinned to cyrius 6.5.36
+
+`[package].cyrius` was **6.5.29** against a 6.5.36 toolchain, which the compiler
+warns about on every build. Re-pinned. `cyrius lib sync` reported no file
+changes — the vendored snapshot was already current — so this is the pin string
+only, with no vendored-code churn.
+
 ## [2.4.11] - 2026-08-19
 
 ### Changed — toolchain pinned to cyrius 6.5.29

@@ -77,6 +77,27 @@ test_group("span underflow");
 sakshi_span_exit();
 assert_eq(sakshi_span_depth(), 0, "no underflow");
 
+# v2.4.12: sakshi_span_enter validated only the UPPER bound, so a negative
+# depth made offset = depth * 24 land BEFORE _sk_span_stack and the three
+# store64s corrupted whatever preceded it. Balanced single-threaded use cannot
+# produce a negative depth (exit refuses below 0), so this pins the guard by
+# forcing the state that memory corruption -- or a contract-violating
+# concurrent exit -- would produce.
+test_group("span negative-depth guard");
+var canary_before = load64(&_sk_span_stack - 24);
+_sk_span_depth = 0 - 1;
+sakshi_span_enter("guarded", 7);
+assert_eq(load64(&_sk_span_stack - 24), canary_before, "no write before the span stack");
+assert_eq(sakshi_span_depth(), 1, "negative depth recovered to a valid slot");
+sakshi_span_exit();
+assert_eq(sakshi_span_depth(), 0, "balanced again");
+_sk_span_depth = 0 - 8;
+sakshi_span_enter("guarded2", 8);
+assert_eq(load64(&_sk_span_stack - 24), canary_before, "still no write before the stack");
+assert_eq(sakshi_span_depth(), 1, "deeply negative depth also recovered");
+sakshi_span_exit();
+assert_eq(sakshi_span_depth(), 0, "clean for the rest of the suite");
+
 # ================================================================
 # Ring buffer
 # ================================================================
