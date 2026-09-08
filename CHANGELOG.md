@@ -5,6 +5,62 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.13] - 2026-09-07
+
+### Changed — toolchain pinned to cyrius 6.6.0
+
+`[package].cyrius` was **6.5.36**; the shipping toolchain is now **6.6.0**, the
+first 6.6 minor. Re-pinned, and `cyrius lib sync` re-vendored `lib/` from the
+6.6.0 snapshot. Same drift the last three releases each corrected one cycle
+late — the roadmap's own rule is to bump the pin *as part of* a change here,
+never as a follow-up.
+
+Verified across every lane the CI runs, all on 6.6.0:
+
+| Target | Result |
+|--------|--------|
+| Linux x86_64 | OK (145984 bytes) |
+| Linux aarch64 | OK (268720 bytes) |
+| Windows PE | OK (155648 bytes) |
+| AGNOS | OK (149904 bytes) |
+
+107 assertions pass (unchanged), `cyrlint` reports 0 warnings across all eight
+`src/` files, and the benchmarks are flat within measurement noise — no path
+moved more than the run-to-run spread:
+
+| Benchmark | 6.5.36 | 6.6.0 |
+|-----------|--------|-------|
+| `err_new` | 6ns | 6ns |
+| `err_unpack` | 16ns | 16ns |
+| `clock_now_ticks` | 9ns | 8ns |
+| `trace_info` | 587ns | 607ns |
+| `trace_filtered` | 7ns | 8ns |
+| `span_cycle` | 1.166us | 1.172us |
+| `hook_emit` | 27ns | 27ns |
+| `ring_write` | 66ns | 67ns |
+| `aring_write` | 66ns | 68ns |
+| `log_kv_ring_wide` | 269ns | 274ns |
+
+### Changed — `atomic` is now a declared stdlib dependency
+
+`[deps].stdlib` listed eight modules but not `atomic`, which sakshi has needed
+since v2.3.0: `sakshi_output_atomic_ring` is built on `fetch_add`,
+`tests/tcyr/sakshi.tcyr` opens with `include "lib/atomic.cyr"`, and the
+`dist/sakshi.cyr` header tells external consumers they must include it.
+
+Nothing was broken — a missing `lib/*.cyr` include is auto-resolved from the
+toolchain snapshot at build time, which is exactly why this went unnoticed. But
+being undeclared kept `lib/atomic.cyr` outside `cyrius lib sync`, so it was the
+one vendored file the pin did not govern: `lib sync` refreshed 17 files and
+skipped it. It happened to be byte-identical across 6.5.36 and 6.6.0, so the
+gap cost nothing this cycle; the next release that changes `atomic.cyr` is the
+one where a stale copy would have been silently kept while everything around it
+moved forward.
+
+Declared, `lib sync` now covers 18 files and the vendored tree matches the
+pinned snapshot exactly — verified file-by-file against
+`~/.cyrius/versions/6.6.0/lib`.
+
 ## [2.4.12] - 2026-08-30
 
 ### Fixed — `sakshi_span_enter` validated only one end of its buffer
