@@ -5,6 +5,110 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] - 2026-09-07
+
+The two findings the 2.5.0 audit deliberately filed rather than fixed, now
+resolved. Both turned out to be sakshi's, but one of them has an upstream twin
+that has been filed against cyrius.
+
+### Fixed — AGNOS timestamps were frozen for the whole run of a foreground program
+
+`_sk_clock_now_ns_raw` read `uptime_ms` (#40) on AGNOS. That is the one monotonic
+source that does not work for the programs most likely to be using it.
+
+AGNOS's userland ABI is explicit
+(`agnos/docs/development/agnos-userland-abi.md`, row 95): a foreground `run`
+program starts with **IF cleared** — only `/bin/agnsh` gets `IF=1` — so the
+100 Hz timer ISR never fires, `timer_ticks` never advances, and **#40 is frozen
+for that program's entire duration**. sakshi is linked into exactly such
+programs, so every event carried an identical timestamp and every
+`sakshi_span_exit` computed `elapsed = 0`. The ring and atomic-ring flight
+recorders became unorderable, and span timing — the reason `span.cyr` exists —
+reported nothing at all, with no error surfaced. AGNOS's note records that this
+behaviour cost **two iron burns** on the 3D arc's rung-10 gate before it was
+understood.
+
+Now reads `uptime_us` (#95) first, falling back to #40:
+
+```cyrius
+var us = syscall(95);
+if (us >= 0) { return us * 1000; }
+var ms = syscall(40);
+if (ms < 0) { return 0; }
+return ms * 1000000;
+```
+
+`#95` is rdtsc-backed and calibrated at boot against the live tick, so it needs
+no interrupts, and it returns **-1** — never a plausible-looking 0 — when
+calibration was refused, which is what makes the fallback safe to distinguish.
+It is also microsecond rather than 10 ms granular, so this improves resolution
+**10,000×** on the path where #40 already worked.
+
+⚠ `#95` collides with Linux `umask(mask)`, and the wrapper is nullary, so
+off-AGNOS the call would read garbage as a mask and *succeed*, returning the old
+umask as a plausible timestamp. The `#ifdef CYRIUS_TARGET_AGNOS` gate is the only
+barrier. Verified by disassembly: `mov eax,95` appears **3 times** in the
+`--agnos` build (so the literal const-folds as required — a `var` would not) and
+**0 times** in the x86_64 Linux build.
+
+### Fixed — atomic-ring producers could write through a live event
+
+The `SK_OUT_ATOMIC_RING` writer reserves a byte range with
+`atomic_fetch_add` and then fills it. Reservations are disjoint in **cursor**
+space but **alias in buffer** space: cursor `c` and cursor `c + 4096` mask to the
+same bytes. A producer preempted between its `fetch_add` and its byte loops wakes
+to find its range already re-issued to a newer producer and writes straight
+through that live event — the reader then decodes a header whose timestamp came
+from one producer and whose length came from another. At the benchmarked
+66 ns/event, one unlucky preemption is enough for a second producer to lap it.
+
+The in-source comment asserted the opposite — "a handful of in-flight
+reservations stay far inside the 4096 B window and cannot alias each other" —
+which is true only for a handful. Corrected.
+
+The writer now re-reads the cursor immediately after reserving. Our bytes are
+`[start, start + event_size)`, so the first reservation that aliases them begins
+at `start + _SK_ARING_CAP`; the cursor having passed that point means those bytes
+belong to a newer event, and ours is dropped rather than written through
+theirs — overwrite-oldest is the ring's policy and we are the oldest. Drops are
+counted in `_sk_aring_dropped`, readable via `_sk_aring_dropped_count()`,
+cumulative and never reset, exactly as `_sk_spans_dropped` is in `span.cyr`.
+Internal (underscore) on purpose: a documented accessor is new public surface and
+therefore a minor, not this patch.
+
+**Residual window, stated plainly**: this closes being *already* lapped on
+wake — the case a preemption produces. It does not close being lapped *during*
+the byte loops. Closing that needs per-slot generation stamps or a CAS commit
+protocol, both of which change the event layout or the cursor semantics, and
+neither is patch-release work. Carried forward as a minor-release item.
+
+Cost, measured A/B in one session with the untouched `ring_write` as a control:
+
+| Benchmark | without guard | with guard | delta |
+|---|---|---|---|
+| `aring_write` | 67.3 ns | 69.7 ns | **+2.4 ns (+3.5%)** |
+| `ring_write` (control) | 67.3 ns | 66.0 ns | flat |
+
+A single producer can never trip the guard — after its own `fetch_add` the cursor
+is `start + event_size` and `event_size` is at most 268 — and the new test proves
+it: 60 events lapping the ring three times over, zero drops. That assertion is
+the one that catches a wrong boundary, which would otherwise silently discard
+events on the single-producer path every existing consumer uses.
+
+### Filed upstream — cyrius `lib/chrono.cyr` has the same defect
+
+sakshi's old comment said it "mirrors chrono.cyr's agnos clock", and it does:
+`clock_now_ns()` in cyrius's stdlib binds the AGNOS monotonic clock to the same
+frozen `sys_uptime_ms()`#40. Cyrius documents the trap itself, two files away, in
+`lib/syscalls_x86_64_agnos.cyr:1202` — "*#95 is the only correct clock there*" —
+and the general-purpose clock walks into it anyway.
+
+That one is not sakshi's to fix. Filed as
+`cyrius/docs/development/issues/sakshi-agnos-chrono-uptime-ms-frozen-2026-09-07.md`
+with the repro, the root cause, and the fix above as the proposed patch. Nothing
+was filed against AGNOS: the kernel provides the correct syscall and documents
+#40's limitation clearly, so there is no defect on that side.
+
 ## [2.5.0] - 2026-09-07
 
 P(-1) scaffold-hardening release. No new features: six review dimensions swept

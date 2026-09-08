@@ -269,6 +269,31 @@ test_group("atomic ring reservation is non-overlapping");
 # 8-byte meta event = 3 events, (12+8) + (12+9) + (12+9) = 62 bytes.
 assert_eq(sakshi_aring_len(), 62, "cursor = sum of reserved event sizes");
 
+# ================================================================
+# Atomic ring: lapped-reservation guard (2.5.1)
+# ================================================================
+test_group("atomic ring guard does not false-positive on a single producer");
+
+# The guard drops an event whose reserved byte range has already been re-issued
+# to a newer producer. A single producer can never be in that position — after
+# its own fetch_add the cursor is start + event_size, and event_size is at most
+# 268 — so filling and WRAPPING the ring repeatedly must drop nothing. This is
+# the assertion that would catch a wrong boundary (>= instead of >, or comparing
+# against the wrong quantity): either would start silently discarding events on
+# the single-producer path every existing consumer uses.
+sakshi_aring_clear();
+var drops_before = _sk_aring_dropped_count();
+sakshi_set_output(SK_OUT_ATOMIC_RING);
+var apayload[200];
+for (var ai = 0; ai < 200; ai = ai + 1) { store8(&apayload + ai, 88); }
+# 60 x (12 + 200) = 12720 bytes — laps the 4096-byte ring three times over.
+for (var aj = 0; aj < 60; aj = aj + 1) { sakshi_info(&apayload, 200); }
+sakshi_set_output(SK_OUT_STDERR);
+
+assert_eq(_sk_aring_dropped_count() - drops_before, 0, "single producer drops nothing across 3 laps");
+assert_eq(sakshi_aring_event_count(), 60, "all 60 events counted");
+assert_eq(sakshi_aring_len(), 4096, "cursor saturates at ring capacity");
+
 test_group("atomic ring clear");
 sakshi_aring_clear();
 assert_eq(sakshi_aring_event_count(), 0, "cleared count");

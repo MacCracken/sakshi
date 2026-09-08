@@ -103,12 +103,30 @@ fn _sk_clock_panic(msg, len): i64 {
 # branches below before adding a caller.
 fn _sk_clock_now_ns_raw(): i64 {
     #ifdef CYRIUS_TARGET_AGNOS
-    # agnos: uptime_ms (#40) → monotonic ms since boot (in rax) ×1e6 = ns. #228
-    # (clock_gettime) is out of agnos's frozen syscall range — #40 is the only
-    # monotonic source. Literal #40 (a `var` would defeat const-fold; agnos has
-    # no reroute for it). Mirrors chrono.cyr's agnos clock. Coarse (~10 ms at the
-    # 100 Hz tick) but correct — see _sk_now_ns for why agnos skips the TSC.
-    return syscall(40) * 1000000;
+    # agnos: uptime_us (#95) FIRST, uptime_ms (#40) only as a fallback.
+    #
+    # #40 was the sole source here until 2.5.1, and it is the WRONG one for a
+    # library. AGNOS's own userland ABI (docs/development/agnos-userland-abi.md,
+    # row 95) is explicit: a foreground `run` program starts with IF cleared —
+    # only /bin/agnsh gets IF=1 — so the 100 Hz timer ISR never fires and #40 is
+    # FROZEN for that program's entire duration. sakshi is linked into exactly
+    # such programs, so every event carried an identical timestamp and every
+    # sakshi_span_exit computed elapsed = 0. The AGNOS note records that this
+    # cost two iron burns on the 3D arc before it was understood.
+    #
+    # #95 is rdtsc-backed and calibrated at boot against the live tick, so it
+    # needs no interrupts, and it is microsecond rather than 10 ms granular.
+    # It returns -1 (never a plausible 0) when calibration was refused, which is
+    # what makes the fallback below safe to distinguish.
+    #
+    # Both numbers MUST be literals — a `var` does not const-fold, and agnos has
+    # no reroute for either. ⚠ #95 collides with Linux `umask`, so this must stay
+    # inside the CYRIUS_TARGET_AGNOS guard; that ifdef is the only barrier.
+    var us = syscall(95);
+    if (us >= 0) { return us * 1000; }
+    var ms = syscall(40);
+    if (ms < 0) { return 0; }
+    return ms * 1000000;
     #endif
     #ifndef CYRIUS_TARGET_AGNOS
     var ts[16];   # {tv_sec,tv_nsec} = 16 B (var[N] byte-sized; [2] would OOB the +8 store).

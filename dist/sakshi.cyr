@@ -1,5 +1,5 @@
 # sakshi.cyr — tracing, error handling, and structured logging for Cyrius
-# Bundled distribution of sakshi v2.5.0
+# Bundled distribution of sakshi v2.5.1
 # Source: https://github.com/MacCracken/sakshi
 # License: GPL-3.0-only
 #
@@ -208,12 +208,30 @@ fn _sk_clock_panic(msg, len): i64 {
 # branches below before adding a caller.
 fn _sk_clock_now_ns_raw(): i64 {
     #ifdef CYRIUS_TARGET_AGNOS
-    # agnos: uptime_ms (#40) → monotonic ms since boot (in rax) ×1e6 = ns. #228
-    # (clock_gettime) is out of agnos's frozen syscall range — #40 is the only
-    # monotonic source. Literal #40 (a `var` would defeat const-fold; agnos has
-    # no reroute for it). Mirrors chrono.cyr's agnos clock. Coarse (~10 ms at the
-    # 100 Hz tick) but correct — see _sk_now_ns for why agnos skips the TSC.
-    return syscall(40) * 1000000;
+    # agnos: uptime_us (#95) FIRST, uptime_ms (#40) only as a fallback.
+    #
+    # #40 was the sole source here until 2.5.1, and it is the WRONG one for a
+    # library. AGNOS's own userland ABI (docs/development/agnos-userland-abi.md,
+    # row 95) is explicit: a foreground `run` program starts with IF cleared —
+    # only /bin/agnsh gets IF=1 — so the 100 Hz timer ISR never fires and #40 is
+    # FROZEN for that program's entire duration. sakshi is linked into exactly
+    # such programs, so every event carried an identical timestamp and every
+    # sakshi_span_exit computed elapsed = 0. The AGNOS note records that this
+    # cost two iron burns on the 3D arc before it was understood.
+    #
+    # #95 is rdtsc-backed and calibrated at boot against the live tick, so it
+    # needs no interrupts, and it is microsecond rather than 10 ms granular.
+    # It returns -1 (never a plausible 0) when calibration was refused, which is
+    # what makes the fallback below safe to distinguish.
+    #
+    # Both numbers MUST be literals — a `var` does not const-fold, and agnos has
+    # no reroute for either. ⚠ #95 collides with Linux `umask`, so this must stay
+    # inside the CYRIUS_TARGET_AGNOS guard; that ifdef is the only barrier.
+    var us = syscall(95);
+    if (us >= 0) { return us * 1000; }
+    var ms = syscall(40);
+    if (ms < 0) { return 0; }
+    return ms * 1000000;
     #endif
     #ifndef CYRIUS_TARGET_AGNOS
     var ts[16];   # {tv_sec,tv_nsec} = 16 B (var[N] byte-sized; [2] would OOB the +8 store).
@@ -906,9 +924,10 @@ fn sakshi_ring_decode_event(buf, buf_len, dst, dst_cap, out_text_len): i64 {
 # Concurrency model — MPSC (multi-producer, single-consumer):
 #   - Writers: lock-free. atomic_fetch_add carries acquire-release ordering
 #     (see lib/atomic.cyr); each event_size reservation is unique and
-#     monotonic, so producers never overlap. Events are clamped to 256 msg
-#     bytes (max event 268 B) so a handful of in-flight reservations stay far
-#     inside the 4096 B window and cannot alias each other.
+#     monotonic, so producers never overlap IN CURSOR SPACE. They DO alias in
+#     BUFFER space once the cursor laps 4096 — see the lapped-reservation check
+#     in _sk_write_aring_event, added in 2.5.1, and the residual window it
+#     documents. Events are clamped to 256 msg bytes (max event 268 B).
 #   - Reader: single. The sakshi_aring_* readers load the cursors atomically,
 #     so they always see a consistent count/length snapshot. LIMITATION: a
 #     bulk read taken while producers are mid-write may observe a partially
@@ -924,6 +943,10 @@ fn sakshi_ring_decode_event(buf, buf_len, dst, dst_cap, out_text_len): i64 {
 var _sk_aring_buf[4096];
 var _sk_aring_write: i64 = 0;   # atomic reservation cursor — total bytes reserved
 var _sk_aring_count: i64 = 0;   # atomic event count
+# Events refused because their reserved range had already been re-issued to a
+# newer producer. Cumulative and never reset — a "how much was lost" figure, not
+# a gauge, matching _sk_spans_dropped in span.cyr.
+var _sk_aring_dropped: i64 = 0;
 enum _SkARingConst {
     _SK_ARING_MASK = 0xFFF;
     _SK_ARING_CAP  = 4096;
@@ -958,6 +981,39 @@ fn _sk_write_aring_event(ts, level, category, msg, msg_len): i64 {
     # Reserve a unique, non-overlapping byte range — the single multi-producer
     # synchronization point. atomic_fetch_add returns the pre-add value = start.
     var start = atomic_fetch_add(&_sk_aring_write, event_size);
+
+    # LAPPED-RESERVATION CHECK (2.5.1). Reservations are disjoint in CURSOR
+    # space but ALIAS in BUFFER space: cursor c and cursor c + 4096 mask to the
+    # same bytes. A producer preempted between the fetch_add above and the byte
+    # loops below wakes to find its range already re-issued, and writes straight
+    # through a newer, live event — the reader then decodes a header whose
+    # timestamp came from one producer and whose length came from another.
+    #
+    # Our bytes are [start, start + event_size). The first reservation that
+    # aliases them begins at cursor start + _SK_ARING_CAP, so the cursor having
+    # passed that point means those bytes now belong to a newer event. Drop
+    # ours rather than corrupt theirs — overwrite-oldest is the ring's policy,
+    # and we are the oldest.
+    #
+    # The comment this replaces claimed "a handful of in-flight reservations
+    # stay far inside the 4096 B window and cannot alias each other". That is
+    # true only for a handful; at the benchmarked 66 ns/event one unlucky
+    # preemption is enough.
+    #
+    # Costs ONE atomic_load on the hot path. A single producer can never trip
+    # it: after its own fetch_add the cursor is start + event_size, and
+    # event_size is at most 268.
+    #
+    # ⚠ RESIDUAL WINDOW, stated honestly: this closes the case where we were
+    # ALREADY lapped when we woke, which is the one a preemption produces. It
+    # does not close being lapped DURING the byte loops — that needs per-slot
+    # arbitration (a generation stamp per fixed-size slot) or a CAS commit
+    # protocol, both of which change the event layout or the cursor semantics
+    # and are therefore not patch-release work. Filed for a future minor.
+    if (atomic_load(&_sk_aring_write) - start > _SK_ARING_CAP) {
+        atomic_fetch_add(&_sk_aring_dropped, 1);
+        return 0;
+    }
 
     # Build the 12-byte header on the stack, then copy it in (byte-by-byte for
     # wrap safety across the power-of-2 mask).
@@ -998,6 +1054,15 @@ fn sakshi_aring_read_raw(dst, max_len): i64 {
         ri = ri + 1;
     }
     return avail;
+}
+
+# Cumulative count of events refused because their reserved range had already
+# been re-issued. Internal (underscore) on purpose, exactly as
+# _sk_spans_dropped_count is in span.cyr: it exists so the test suite can assert
+# the drop path and so a consumer chasing lost events can read it. Promoting it
+# to documented public API is new surface and therefore a MINOR, not this patch.
+fn _sk_aring_dropped_count(): i64 {
+    return atomic_load(&_sk_aring_dropped);
 }
 
 # Number of events written to the atomic ring (atomic load).
