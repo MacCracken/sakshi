@@ -5,6 +5,242 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-09-07
+
+P(-1) scaffold-hardening release. No new features: six review dimensions swept
+across `src/`, **50 findings raised and 14 refuted** by an adversarial verify
+pass, twelve repaired. Full report in
+[`docs/audit/2026-09-07-audit.md`](docs/audit/2026-09-07-audit.md), including two
+findings deliberately filed rather than fixed.
+
+Test suite 107 → **136 assertions**, all passing. Every repair has a regression
+test that was verified to **fail** before its fix. Benchmarks flat within noise;
+all four targets (x86_64 / aarch64 / Windows PE / AGNOS) build and run.
+
+### Fixed — Windows PE emitted timestamp 0 on every first event, and could stall 10 ms per log call
+
+`_sk_clock_init` calibrated the TSC across a single 10 ms `nanosleep` window and
+only stored a frequency `if (dn > 0)`. On Windows PE the reference clock is
+`GetTickCount64`, whose tick is **~15.6 ms**, so both ends of that window land
+inside one tick, `dn == 0`, and no scale is ever computed. `_sk_ticks_to_ns`
+then multiplies the cycle counter by a **zero** scale.
+
+Deterministic, not flaky — the PE smoke printed `[0] [INFO] sakshi smoke ok` on
+**5 of 5** cold runs under wine, and a real monotonic timestamp on 5 of 5 after
+the fix.
+
+The worse half was the retry behaviour. Two guards disagreed about what
+"initialized" meant: `_sk_now_ns` re-entered init whenever `_sk_tsc_scale == 0`,
+while `_sk_clock_init` early-returned whenever `_sk_tsc_freq_hz > 0`. When
+calibration fails **both** stay 0, so the early return never fired and every
+single `_sk_now_ns` ran the whole calibration path — including its 10 ms sleep.
+A host with a stuck reference clock would stall the caller 10 ms per event,
+capping a logging library at 100 events/second.
+
+Four changes: the calibration window retries up to 8 times requiring
+`dn > 0 && dt > 0`; a new `_sk_clock_init_done` flag gives "already tried" a
+single meaning and is set on every exit path; `_sk_now_ns` falls back to the raw
+reference clock when the scale is still 0 (coarse, but monotonic and non-zero);
+and `sakshi_clock_recalibrate` clears the flag so it does not become a no-op.
+
+This also closes the open half of the 2026-04-15 audit's SA-010.
+
+### Fixed — an oversized ring event overwrote its own header and desynced the ring
+
+`_sk_write_ring_event` was the only one of the three binary writers that wrote
+the caller's `msg_len` into the 12-byte header unclamped and then copied that
+many bytes. `_sk_write_aring_event` and `_sk_write_udp_event` both cap first,
+and the 2026-04-15 audit's SA-001 fixed this exact shape in the UDP header — the
+ring path never got the same treatment.
+
+| `msg_len` | What happened |
+|---|---|
+| ≥ 65536 | `store16` kept the low 16 bits; header advertised `msg_len & 0xFFFF` while the full `msg_len` bytes were written. Every later decode resumed mid-event. |
+| 4085–65535 | Header accurate but named an event larger than the 4096-byte ring, so `sakshi_ring_decode_event` rejected it and the ring was undecodable from there. |
+
+The new test shows it concretely: a 5000-byte message is a 5012-byte event in a
+4096-byte ring, so it wraps and **overwrites its own header**. Reading the length
+back gives `16705` — `0x4141`, two bytes of the message payload.
+
+Masked indexing means this never wrote outside `_sk_ring_buf`: data-integrity
+loss, not memory corruption. Now clamped to **4084** (4096 ring − 12 header) —
+exactly what the decoder accepts, so every message that decodes correctly today
+still does. Same class as
+[CVE-2026-31694](https://nvd.nist.gov/vuln/detail/CVE-2026-31694).
+
+### Fixed — selecting an unconfigured output target silently discarded every event
+
+`sakshi_set_output(SK_OUT_FILE)` without a preceding `sakshi_output_file()`
+leaves `_sk_file_fd` at -1, and `_sk_write_file` then returns without writing.
+Same for `SK_OUT_UDP` with no socket and `SK_OUT_HOOK` with no hook. Logging
+looked configured and produced nothing, with no diagnostic anywhere.
+
+The same defect class the 2.4.x line already fixed twice — the full span stack
+and the truncating `sakshi_log_kv` scratch — on the same principle: a tracing
+library that stops tracing has to say so.
+
+`sakshi_set_output` now returns a diagnostic while still honouring the switch:
+
+| Return | Meaning |
+|---|---|
+| `0` | target can receive events |
+| `-1` | `SK_OUT_FILE` selected, no file open |
+| `-2` | `SK_OUT_UDP` selected, no socket open |
+| `-3` | `SK_OUT_HOOK` selected, no hook installed |
+| `-4` | not a known `SK_OUT_*` value |
+
+Additive — every existing caller ignores the return, and behaviour is unchanged.
+
+### Fixed — macOS read the monotonic clock from the wrong place
+
+`_sk_clock_now_ns_raw` had a Windows branch and a Linux branch and nothing else,
+so macOS fell through to the **Linux** path and decoded
+`load64(&ts) * 1e9 + load64(&ts + 8)` out of the timespec buffer.
+
+Wrong place on Darwin. `syscall(228, 4, _)` **is** rerouted on both Mach-O
+backends — `EMACHO_CLOCK_ARM` to libSystem `_clock_gettime_nsec_np` via
+`__got[6]`, `EMACHO_CLOCK_X86` on Intel — and both return nanoseconds **in the
+return register**. Confirmed against cyrius's own consumer, `_prof_clock_ns` in
+`src/backend/common/runtime.cyr`, which does `return syscall(228, 4, &ts);` for
+macOS and keeps the timespec decode for Linux. The in-tree comment claiming
+"x86-macOS is HELD — 228 is unrouted on x86-macho" was stale and is what
+justified the omission.
+
+Every macOS calibration anchor was therefore read from a buffer the reroute
+never filled, making the TSC frequency and every span duration wrong by an
+arbitrary factor — with numbers plausible enough not to look broken. Fixed with
+a `CYRIUS_TARGET_MACOS` branch. The buffer is still passed as a real address:
+`EMACHO_CLOCK_X86` dereferences the third argument, and cyrius v6.5.43 SIGSEGV'd
+on Intel Mac for passing `0`.
+
+### Fixed — macOS UDP reported success and then sent nothing
+
+The Mach-O `ESYSXLAT` table translates `socket` (`41 → 97`) but has **no entry
+for `sendto`** — neither the x86 `44` nor the aarch64 `206`. Verified by
+enumerating every entry in the table.
+
+The asymmetry is worse than a missing pair: `socket` succeeds and returns a real
+fd, so `sakshi_output_udp` set the fd, flipped the target and **returned
+success**, after which every event issued an untranslated syscall number —
+silently emitting nothing on arm64, and running an unrelated BSD call or taking
+SIGSYS on x86. Now refused up front with `-1`, exactly as AGNOS already is, so
+the caller keeps a working stderr/file target.
+
+There is no macOS CI lane; both macOS fixes are verified against the toolchain's
+translation tables rather than by execution.
+
+### Fixed — a wrapped ring decoded caller payload as an event header
+
+`sakshi_ring_read_raw` computes `start = _sk_ring_write - avail`, which once the
+ring has wrapped lands **mid-event** — so the first 12 bytes handed to the
+decoder are message payload, not a header, and it parsed them as one.
+
+No attacker needed: any long-running consumer wraps the 4096-byte ring, and from
+then on the flight recorder is unreadable exactly when it is wanted. **No test
+covered a wrapped ring** — the existing ones write ~60 bytes.
+
+It also admitted log forgery. A consumer logging attacker-influenced bytes
+(`sakshi_warn(user_agent, n)`) lets an attacker embed a well-formed 12-byte
+header in their own message; once the ring wraps onto it, the decoder emits
+attacker-chosen text as a `FATAL` line with an attacker-chosen timestamp.
+
+`sakshi_ring_decode_event` now validates `level` against the exact set
+`_sk_level_str` knows (0–5, 10, 11, 255). The existing `msg_len > 4084` ceiling
+was not enough on its own — a forged header with `msg_len = 4` sails through it.
+
+### Changed — `_sk_fmt_int` does one division per digit instead of two
+
+The digit loop was `d = n % 10; ... n = n / 10;` — two 64-bit `idiv` per digit,
+on the text hot path, for a 14+ digit nanosecond timestamp, twice per span EXIT
+line. Now `q = n / 10; d = n - q * 10; n = q`. Both operators truncate toward
+zero, so this is exactly `n % 10` for every i64 including negatives, and the
+2.4.8 i64::MIN negate-the-digit fix is preserved.
+
+Measured end-to-end, 4 runs each at 1e6 iterations:
+
+| Benchmark | before | after | delta |
+|---|---|---|---|
+| `trace_info` | 598 ns | 580 ns | **−3.0%** |
+| `span_cycle` | 1.168 µs | 1.127 µs | **−3.5%** |
+
+Binary targets are unchanged — they format no integers.
+
+### Fixed — re-opening a file or UDP target leaked the previous descriptor
+
+`sakshi_output_file` and `sakshi_output_udp` overwrote the stored fd without
+closing it. A log-rotating consumer leaks one descriptor per rotation until it
+hits `RLIMIT_NOFILE`, at which point opening fails and logging stops. Both now
+close the previous fd first.
+
+### Fixed — two binary writers clamped only the upper bound
+
+`_sk_write_aring_event` and `_sk_write_udp_event` capped `msg_len` from above but
+not below. In the atomic ring that is the one that matters: `event_size = 12 +
+m_len` feeds `atomic_fetch_add` on the **shared reservation cursor**, so a
+negative length moves it backwards and breaks the disjointness the whole
+multi-producer design rests on. Both now clamp at 0.
+
+### Fixed — `sakshi_span_exit` guarded only one end of the span stack
+
+`sakshi_span_enter` clamps a negative depth and rejects `>= 16`; exit checked
+only `<= 0`, then indexed at `(depth-1)*24` unbounded. Depth 17 gives offset 384
+— one entry past the 384-byte stack — and the loads would take a name pointer
+and length from the neighbouring globals and hand them to the formatter to
+dereference.
+
+The verify pass correctly established this is **not reachable**: depth is written
+in exactly two guarded places. Fixed anyway as the mirror of the lower-bound
+guard added in 2.4.12, on that release's own reasoning — memory corruption
+elsewhere, or a contract violation the library cannot enforce.
+
+### Removed — four dead functions
+
+`_sk_memset`, `_sk_bin_write_hdr`, `_sk_bin_read_hdr` (`format.cyr`) and
+`_sk_ring_put` (`output.cyr`) were defined and never called — not by sakshi, and
+not by any of the **66 ecosystem repos that declare a sakshi dependency**,
+verified by grep across all of them excluding vendored copies of sakshi's own
+bundle. All three binary writers build the header inline, so the shared header
+helpers had no callers. The binary-layout documentation they accompanied is kept.
+
+`CYRIUS_DCE=1` already pruned these from every shipped binary, so this is source
+clarity rather than a size win.
+
+### Fixed — documentation drift
+
+- `lib.cyr`'s `Provides:` block listed 43 of 46 public functions; the 128-bit
+  trace-id trio (`sakshi_trace_set_128`, `sakshi_trace_id_hi`,
+  `sakshi_trace_id_lo`) was missing. Now 46/46, checked by set comparison in both
+  directions.
+- `README.md` still described `sakshi_err_at_span` as "full profile only". The
+  slim/full split was retired at 2.0.0.
+- `output.cyr`'s header comment claimed a dependency on `_sk_bin_write_hdr`,
+  which it never called.
+- `README.md` listed five log levels (no `fatal`) and four output targets; there
+  are six of each. Its architecture block omitted `syscalls.cyr` and `clock.cyr`
+  and described a "module" formatter that does not exist.
+- `docs/architecture/overview.md` had the same omissions, and its data-flow
+  diagram named `_sk_write()` as the target dispatcher and routed the binary
+  targets through the text formatter. Neither is true: `_sk_emit` dispatches, and
+  ring / atomic-ring / UDP / hook never touch the formatter. Redrawn.
+- `clock.cyr` described `_sk_clock_now_ns_raw` as "used only at calibration
+  time" — it is the entire clock on AGNOS, and as of this release the fallback on
+  every target — and documented `sakshi_clock_recalibrate` as a flat ~10 ms pause,
+  which is now a 10–80 ms range and x86_64-only.
+
+### Verified, not changed
+
+Every `var buf[N]` in `src/` was enumerated and its maximum reachable access
+offset proven `< N` on both ends. No memory-corruption defect was found.
+
+The 2026-04-15 audit's remaining deferrals were re-checked: SA-004 (ring decode
+`msg_len` guard), SA-007 (`sakshi_set_output_fd` validation) and SA-009 (dead
+`_sk_strlen`) are all already fixed in tree; SA-005 is documented; SA-011 needs
+no action.
+
+`sakshi_ring_read_raw` / `sakshi_aring_read_raw` keep the C convention that the
+caller owns `dst`'s size, and `sakshi_output_file` keeps `fopen`'s trust
+boundary on `path`. Both documented rather than changed.
+
 ## [2.4.13] - 2026-09-07
 
 ### Changed — toolchain pinned to cyrius 6.6.0

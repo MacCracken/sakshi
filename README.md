@@ -7,9 +7,9 @@ In Advaita Vedanta, the *sakshi* is pure observer-consciousness — always prese
 ## What It Does
 
 - **Error codes** — Packed i64 error representation (code + category in a single integer). Zero-alloc error creation and propagation.
-- **Tracing** — Structured log output with levels (error, warn, info, debug, trace). Fixed-buffer formatting. No heap allocation on the hot path.
+- **Tracing** — Structured log output with levels (fatal, error, warn, info, debug, trace). Fixed-buffer formatting. No heap allocation on the hot path.
 - **Spans** — Function enter/exit tracking with timing. Nestable context for tracing call chains.
-- **Output targets** — stderr, file, ring buffer, UDP. Runtime-selectable via `sakshi_set_output`.
+- **Output targets** — stderr, file, ring buffer, lock-free atomic ring, UDP, and a subscriber hook. Runtime-selectable via `sakshi_set_output`.
 
 ## Design Principles
 
@@ -24,11 +24,13 @@ In Advaita Vedanta, the *sakshi* is pure observer-consciousness — always prese
 sakshi/
   src/
     lib.cyr         — public API, includes all modules (internal consumers start here)
+    syscalls.cyr    — arch-dispatched syscall numbers (x86_64 / aarch64 / AGNOS)
+    clock.cyr       — cycle-counter timestamps (rdtsc / cntvct_el0), TSC calibration
     error.cyr       — packed error codes, categories, context
     trace.cyr       — log levels, structured output, fixed buffers
     span.cyr        — enter/exit tracking, timing
-    format.cyr      — timestamp, level, module, message formatting
-    output.cyr      — stderr, file, ring buffer, UDP targets
+    format.cyr      — timestamp, level, and message formatting; binary event header
+    output.cyr      — stderr, file, ring, atomic ring, UDP, hook targets
   dist/
     sakshi.cyr      — generated single-file bundle (external consumers)
   scripts/
@@ -74,7 +76,7 @@ Packed i64: `[63:32 context] [31:16 category] [15:0 error code]`
 
 - `sakshi_err_new(code, cat)` — context = 0
 - `sakshi_err_with_ctx(code, cat, ctx)` — caller-defined 32-bit context (source hash, span ID)
-- `sakshi_err_at_span(code, cat)` — context = current span depth (full profile only)
+- `sakshi_err_at_span(code, cat)` — context = current span depth
 
 | Category | Value | Domain |
 |----------|-------|--------|

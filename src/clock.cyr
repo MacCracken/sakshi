@@ -22,6 +22,13 @@ var _sk_tsc_freq_hz: i64 = 0;
 # Q32 fixed-point ns-per-tick scale (set in step 3).
 var _sk_tsc_scale: i64 = 0;
 
+# Set once _sk_clock_init has RUN, whether or not it managed to calibrate.
+# Distinct from _sk_tsc_freq_hz on purpose: init used to gate on the frequency
+# being non-zero while _sk_now_ns gated on the SCALE being non-zero, so a host
+# where calibration failed left both at 0 and every single _sk_now_ns re-entered
+# the full 10 ms nanosleep window. One flag, one meaning: "we already tried".
+var _sk_clock_init_done: i64 = 0;
+
 # Read the cycle counter. Returns raw ticks; convert with _sk_ticks_to_ns.
 fn _sk_now_ticks(): i64 {
     var ticks: i64 = 0;
@@ -88,9 +95,12 @@ fn _sk_clock_panic(msg, len): i64 {
     return 0;
 }
 
-# clock_gettime(MONOTONIC_RAW) wrapper used only at calibration time.
-# Inlines the same syscall the v2.1.x _sk_now_ns used so the calibration
-# anchor is in the same time base as a non-cycle-counter implementation.
+# Monotonic reference clock. NOT calibration-only, despite what this comment
+# said before 2.5.0: it is the entire clock on AGNOS (which skips the TSC), and
+# since 2.5.0 it is also the fallback _sk_now_ns uses on any target whose
+# calibration failed. Per-target contract differs — Linux fills the timespec,
+# macOS and Windows return the value in the return register — so read the
+# branches below before adding a caller.
 fn _sk_clock_now_ns_raw(): i64 {
     #ifdef CYRIUS_TARGET_AGNOS
     # agnos: uptime_ms (#40) → monotonic ms since boot (in rax) ×1e6 = ns. #228
@@ -113,11 +123,35 @@ fn _sk_clock_now_ns_raw(): i64 {
     return syscall(228, 4, &ts) * 1000000;
     #endif
     #ifndef CYRIUS_TARGET_WIN
-    # Linux: clock_gettime(MONOTONIC_RAW=4) fills the timespec. (x86-macOS is HELD —
-    # 228 is unrouted on x86-macho; arm64-macOS never reaches here.)
+    #ifdef CYRIUS_TARGET_MACOS
+    # macOS returns the answer in the RETURN REGISTER, not through the buffer.
+    # 228 IS rerouted on both Darwin backends — EMACHO_CLOCK_ARM sends it to
+    # libSystem _clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW=4) via __got[6] on
+    # arm64, EMACHO_CLOCK_X86 composes ns on x86_64 — and both hand back u64
+    # nanoseconds directly. cyrius's own _prof_clock_ns
+    # (src/backend/common/runtime.cyr) consumes it exactly this way:
+    # `return syscall(228, 4, &ts);` for macOS, and the timespec decode below
+    # only for Linux.
+    #
+    # This branch did not exist until 2.5.0, so macOS fell through to the Linux
+    # decode and read `load64(&ts)*1e9 + load64(&ts+8)` out of a buffer the
+    # reroute never filled as a timespec — a garbage calibration anchor, and
+    # therefore a garbage TSC frequency and every span duration wrong.
+    #
+    # The buffer must still be a REAL address even though the answer does not
+    # come through it: EMACHO_CLOCK_X86 dereferences the third argument
+    # (`mov rax,[rdi]`), and cyrius v6.5.43 SIGSEGV'd on Intel Mac for passing
+    # a literal 0 there.
+    var mret = syscall(228, 4, &ts);
+    if (mret < 0) { return 0; }
+    return mret;
+    #endif
+    #ifndef CYRIUS_TARGET_MACOS
+    # Linux: clock_gettime(MONOTONIC_RAW=4) fills the timespec.
     var ret = syscall(228, 4, &ts);
     if (ret < 0) { return 0; }
     return load64(&ts) * 1000000000 + load64(&ts + 8);
+    #endif
     #endif
     #endif
 }
@@ -126,7 +160,8 @@ fn _sk_clock_now_ns_raw(): i64 {
 # a 10 ms nanosleep window. Stores _sk_tsc_freq_hz (and, in step 3, _sk_tsc_scale).
 # Idempotent — early-returns if already initialized.
 fn _sk_clock_init(): i64 {
-    if (_sk_tsc_freq_hz > 0) { return 0; }
+    if (_sk_clock_init_done != 0) { return 0; }
+    _sk_clock_init_done = 1;
 
     #ifdef CYRIUS_TARGET_AGNOS
     # agnos uses uptime_ms directly (see _sk_now_ns) — no TSC calibration: no
@@ -136,6 +171,7 @@ fn _sk_clock_init(): i64 {
     # idempotent guard + any `_sk_tsc_scale == 0` check are satisfied.
     _sk_tsc_freq_hz = 1;
     _sk_tsc_scale = 1;
+    _sk_clock_init_done = 1;
     return 0;
     #endif
 
@@ -144,9 +180,6 @@ fn _sk_clock_init(): i64 {
     if (_sk_cpuid_invariant_tsc() == 0) {
         _sk_clock_panic("sakshi: clock_init: invariant TSC absent (CPUID 0x80000007 EDX bit 8 = 0)\n", 75);
     }
-
-    var t0_ns = _sk_clock_now_ns_raw();
-    var t0_ticks = _sk_now_ticks();
 
     # nanosleep(10 ms). timespec is { tv_sec, tv_nsec } — two i64 = 16 bytes.
     # var[N] is byte-sized in cyrius, so this must be [16], not [2]: a [2]
@@ -164,18 +197,33 @@ fn _sk_clock_init(): i64 {
     var sleep_ts[16];
     store64(&sleep_ts, 0);
     store64(&sleep_ts + 8, 10000000);
-    syscall(35, &sleep_ts, 0);
 
-    var t1_ticks = _sk_now_ticks();
-    var t1_ns = _sk_clock_now_ns_raw();
-
-    var dn = t1_ns - t0_ns;
-    var dt = t1_ticks - t0_ticks;
-
+    # RETRY the window rather than measuring once. The reference clock is not
+    # always fine-grained enough to resolve 10 ms: on Windows PE
+    # _sk_clock_now_ns_raw is GetTickCount64, whose tick is ~15.6 ms, so both
+    # ends of a single 10 ms window routinely land inside ONE tick. That gives
+    # dn == 0, no frequency, no scale — and _sk_ticks_to_ns then multiplies by a
+    # zero scale, so EVERY timestamp is 0. Observed deterministically: the PE
+    # smoke printed `[0] [INFO] sakshi smoke ok` on 5 of 5 cold runs.
+    # Each retry adds another 10 ms of separation, so a coarse tick is crossed
+    # within a couple of attempts. Bounded so a genuinely dead reference clock
+    # costs a fixed 80 ms once, not an unbounded stall.
     # freq_hz = dt * 1e9 / dn. At 3 GHz, dt ≈ 3e7 over 10 ms, so dt*1e9 ≈ 3e16
     # — well inside i64 (max ≈ 9.2e18).
-    if (dn > 0) {
-        _sk_tsc_freq_hz = dt * 1000000000 / dn;
+    var attempts = 0;
+    while (attempts < 8) {
+        var t0_ns = _sk_clock_now_ns_raw();
+        var t0_ticks = _sk_now_ticks();
+        syscall(35, &sleep_ts, 0);
+        var t1_ticks = _sk_now_ticks();
+        var t1_ns = _sk_clock_now_ns_raw();
+        var dn = t1_ns - t0_ns;
+        var dt = t1_ticks - t0_ticks;
+        if (dn > 0 && dt > 0) {
+            _sk_tsc_freq_hz = dt * 1000000000 / dn;
+            break;
+        }
+        attempts = attempts + 1;
     }
     #endif
 
@@ -211,8 +259,17 @@ fn _sk_now_ns(): i64 {
     return _sk_clock_now_ns_raw();
     #endif
     #ifndef CYRIUS_TARGET_AGNOS
-    if (_sk_tsc_scale == 0) {
+    if (_sk_clock_init_done == 0) {
         _sk_clock_init();
+    }
+    # Calibration can still come back empty on a host whose reference clock is
+    # too coarse to measure the window even after the retries in
+    # _sk_clock_init. Fall back to that reference clock directly: coarse, but
+    # monotonic and non-zero. A zero timestamp on every event is strictly worse
+    # than a low-resolution one, and gating on _sk_clock_init_done (not on the
+    # scale) is what stops this from re-entering the 10 ms window every call.
+    if (_sk_tsc_scale == 0) {
+        return _sk_clock_now_ns_raw();
     }
     return _sk_ticks_to_ns(_sk_now_ticks());
     #endif
@@ -220,9 +277,15 @@ fn _sk_now_ns(): i64 {
 
 # Re-run the calibration loop and refresh _sk_tsc_freq_hz / _sk_tsc_scale.
 # Useful for long-running consumers (uptime > ~1 hour) where the TSC's true
-# rate has drifted relative to the kernel's MONOTONIC_RAW. Pauses the calling
-# context for ~10 ms (one nanosleep + two clock_gettime syscalls). Returns
-# the new freq in Hz.
+# rate has drifted relative to the kernel's MONOTONIC_RAW. Returns the new freq
+# in Hz.
+#
+# Cost is x86_64-only and is a range, not a fixed 10 ms: the calibration window
+# retries until the reference clock actually advances (up to 8 attempts of one
+# nanosleep + two reference reads each), so this pauses the caller ~10 ms on a
+# fine-grained clock and up to ~80 ms on a coarse one. aarch64 reads CNTFRQ_EL0
+# and returns immediately — architectural, cannot drift, no syscall. AGNOS does
+# no calibration at all.
 #
 # Single-threaded only — sakshi makes no concurrency guarantees, so callers
 # must ensure no other thread is in _sk_now_ns / span / trace during the call.
@@ -231,6 +294,9 @@ fn _sk_now_ns(): i64 {
 # real hardware). aarch64: reads CNTFRQ_EL0 (architectural; cannot drift).
 fn sakshi_clock_recalibrate(): i64 {
     _sk_tsc_freq_hz = 0;
+    # Clear the attempted-flag too, or _sk_clock_init early-returns and this
+    # becomes a silent no-op.
+    _sk_clock_init_done = 0;
     _sk_clock_init();
     return _sk_tsc_freq_hz;
 }

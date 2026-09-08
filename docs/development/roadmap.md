@@ -1,6 +1,6 @@
 # Sakshi Development Roadmap
 
-> **Current: v2.4.13** (pin: cyrius 6.6.0 — current). ⚠ Until 2.4.10 this repo was pinned to 6.5.0 with a developer `lib/` symlink into **6.4.49**, so it was tested and benchmarked against a language two minors behind the one it is folded into. For a stdlib repo that makes the results describe the wrong compiler; bump the pin as part of any change here, never as a follow-up. Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source — as of v2.2.10 the hot timestamp path (`_sk_now_ns`) has no `#ifdef CYRIUS_TARGET_WIN` branch — PE shares the calibrated-rdtsc path; the only Windows branch left in `src/clock.cyr` is the one-time TSC-calibration anchor in `_sk_clock_now_ns_raw` (`GetTickCount64`). The `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.3.0 adds the lock-free multi-producer `SK_OUT_ATOMIC_RING` target. v2.2.0 public API is stable.
+> **Current: v2.5.0** (pin: cyrius 6.6.0 — current). ⚠ Until 2.4.10 this repo was pinned to 6.5.0 with a developer `lib/` symlink into **6.4.49**, so it was tested and benchmarked against a language two minors behind the one it is folded into. For a stdlib repo that makes the results describe the wrong compiler; bump the pin as part of any change here, never as a follow-up. Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source — as of v2.2.10 the hot timestamp path (`_sk_now_ns`) has no `#ifdef CYRIUS_TARGET_WIN` branch — PE shares the calibrated-rdtsc path; the only Windows branch left in `src/clock.cyr` is the one-time TSC-calibration anchor in `_sk_clock_now_ns_raw` (`GetTickCount64`). The `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.3.0 adds the lock-free multi-producer `SK_OUT_ATOMIC_RING` target. v2.2.0 public API is stable.
 >
 > Shipped history lives in [`CHANGELOG.md`](../../CHANGELOG.md). This file tracks only what's ahead.
 
@@ -42,7 +42,10 @@ consumers stop hand-parsing offsets with `load64`.
 
 Deliberately deferred out of 2.4.9: new public symbols make it a **minor**, and
 a minor needs the closeout pass. `sakshi_log_err` above wants the same path, so
-the two should land together as one `2.5.0`.
+the two should land together as one minor — **now `2.6.0`**. The `2.5.0` slot was
+taken by the P(-1) hardening sweep (see CHANGELOG and
+[`audit/2026-09-07-audit.md`](../audit/2026-09-07-audit.md)), which is what
+P(-1) is for: harden the scaffold *before* the next feature arc, not after.
 
 ⚠ Also owed from the same report: `sakshi_log_kv` takes **exactly one pair**,
 and its 256-byte scratch is fixed. 2.4.9 made the truncation *reported* rather

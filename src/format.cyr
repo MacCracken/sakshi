@@ -20,14 +20,6 @@ fn _sk_memcpy(dst, src, n): i64 {
     return dst;
 }
 
-# Fill n bytes at dst with val
-fn _sk_memset(dst, val, n): i64 {
-    for (var i = 0; i < n; i = i + 1) {
-        store8(dst + i, val);
-    }
-    return dst;
-}
-
 # ================================================================
 # Integer formatting
 # ================================================================
@@ -47,10 +39,17 @@ fn _sk_fmt_int(n, buf): i64 {
     # upstream half of it. sakshi 2.4.8.
     if (n < 0) { neg = 1; }
     if (n == 0) { store8(buf + bi, 48); bi = bi - 1; }
+    # ONE division per digit, not two. This was `d = n % 10; ... n = n / 10;`,
+    # which emits two 64-bit idiv for every digit — and a ns timestamp is 14+
+    # digits, on the text hot path, twice per span EXIT line. Both `/` and `%`
+    # truncate toward zero, so `n - (n/10)*10` is exactly `n % 10` for every i64
+    # including negatives, and the `d < 0` negate-the-digit fix above (the 2.4.8
+    # i64::MIN defect) is preserved unchanged.
     while (n != 0) {
-        var d = n % 10;
+        var q = n / 10;
+        var d = n - q * 10;
         if (d < 0) { d = 0 - d; }
-        store8(buf + bi, 48 + d); bi = bi - 1; n = n / 10;
+        store8(buf + bi, 48 + d); bi = bi - 1; n = q;
     }
     if (neg == 1) { store8(buf + bi, 45); bi = bi - 1; }
     var len = 23 - bi;
@@ -185,21 +184,9 @@ enum _SkBinConst {
     _SK_BIN_HDR_SIZE = 12;
 }
 
-# Write a binary event header into buf. Returns header size (12).
-fn _sk_bin_write_hdr(buf, timestamp, level, category, msg_len): i64 {
-    store64(buf, timestamp);
-    store8(buf + 8, level);
-    store8(buf + 9, category);
-    store16(buf + 10, msg_len);
-    return _SK_BIN_HDR_SIZE;
-}
-
-# Read a binary event header from buf. Returns fields via out pointers.
-# out_ts, out_level, out_cat, out_msg_len are pointers to i64.
-fn _sk_bin_read_hdr(buf, out_ts, out_level, out_cat, out_msg_len): i64 {
-    store64(out_ts, load64(buf));
-    store64(out_level, load8(buf + 8));
-    store64(out_cat, load8(buf + 9));
-    store64(out_msg_len, load16(buf + 10));
-    return _SK_BIN_HDR_SIZE;
-}
+# The three binary writers (_sk_write_ring_event, _sk_write_aring_event,
+# _sk_write_udp_event in output.cyr) each build this header inline against
+# their own destination buffer, and sakshi_ring_decode_event reads it inline.
+# Shared _sk_bin_write_hdr / _sk_bin_read_hdr helpers existed here until 2.5.0
+# but had no callers in sakshi or in any of the 66 consuming repos — removed
+# as dead code. The layout above is the contract; keep it accurate.

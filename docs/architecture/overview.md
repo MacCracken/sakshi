@@ -6,24 +6,37 @@
 
 ```
 sakshi
+├── syscalls   — arch-dispatched syscall numbers (x86_64 / aarch64 / AGNOS)
+├── clock      — cycle-counter timestamps (rdtsc / cntvct_el0), TSC calibration
 ├── error      — packed i64 error codes (code + category + optional context)
 ├── trace      — log levels (fatal/error/warn/info/debug/trace), structured output
 ├── span       — enter/exit function tracking with timing
-├── format     — fixed-buffer message formatting (timestamp, level, module, message)
-└── output     — output targets (stderr, file, ring buffer, UDP)
+├── format     — fixed-buffer text formatting + the 12-byte binary event header
+└── output     — six targets: stderr, file, ring, atomic ring, UDP, subscriber hook
 ```
 
 ## Data Flow
 
 ```
 Application code
-  → sakshi_error() / sakshi_info() / sakshi_span_enter()
-    → format (fixed buffer, no alloc)
-      → _sk_write() dispatcher
-        → stderr (default)
-        → file (append mode, opened by sakshi_output_file)
-        → ring buffer (4KB circular, in-memory)
-        → UDP (sendto, opened by sakshi_output_udp)
+  → sakshi_error() / sakshi_info() / sakshi_log_kv() / sakshi_span_enter()
+    → _sk_emit() / _sk_emit_span()          — the dispatcher; reads the clock once
+      │
+      ├─ BINARY targets — no text formatting at all, 12-byte header + raw bytes
+      │    → ring buffer   (4KB circular, overwrite-oldest, in-memory)
+      │    → atomic ring   (4KB, lock-free multi-producer reservation writer)
+      │    → UDP           (sendto; unavailable on Windows PE, macOS and AGNOS)
+      │
+      ├─ HOOK target — the event is passed to the subscriber fn unformatted
+      │    → fncall6(hook, ts, level, category, msg, msg_len, sixth)
+      │
+      └─ TEXT targets — _sk_fmt_line / _sk_fmt_span into a 256-byte buffer,
+           then _sk_write()
+             → stderr (default)
+             → file (append mode, opened by sakshi_output_file)
+
+Only the text branch goes through the formatter, and _sk_write() dispatches
+between stderr and file — it is not the top-level target dispatcher.
 ```
 
 ## Error Format

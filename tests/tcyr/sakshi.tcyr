@@ -127,6 +127,117 @@ assert_eq(sakshi_ring_event_count(), 0, "cleared count");
 assert_eq(sakshi_ring_len(), 0, "cleared len");
 
 # ================================================================
+# Ring event msg_len clamp (2.5.0)
+# ================================================================
+test_group("ring buffer oversized message is clamped, not desynced");
+
+# An event longer than the ring can hold used to be written with its FULL
+# length in the header, so either the u16 header field truncated (>= 65536)
+# and the reader resumed mid-event, or the header named an event bigger than
+# the ring and sakshi_ring_decode_event rejected everything from there on.
+# _sk_write_aring_event and _sk_write_udp_event both clamped already; the ring
+# writer did not. It now caps at 4084 = 4096 ring - 12 header.
+var bigmsg[5000];
+for (var bi = 0; bi < 5000; bi = bi + 1) { store8(&bigmsg + bi, 65); }
+
+sakshi_ring_clear();
+sakshi_set_output(SK_OUT_BUFFER);
+sakshi_info(&bigmsg, 5000);
+sakshi_set_output(SK_OUT_STDERR);
+
+var oraw[4096];
+var on = sakshi_ring_read_raw(&oraw, 4096);
+assert_gt(on, 0, "oversized event left bytes in the ring");
+
+# The decoder must ACCEPT it — before the clamp the header said 5000, which
+# trips the decoder's `msg_len > 4084` guard and returns 0 (undecodable ring).
+var otext[4200];
+var otext_len = 0;
+var oconsumed = sakshi_ring_decode_event(&oraw, on, &otext, 4200, &otext_len);
+assert_gt(oconsumed, 0, "oversized event still decodes");
+assert_gt(otext_len, 0, "oversized event yields text");
+
+# And the header length must match what was actually written: 4084, not 5000.
+var ohdr_len = load16(&oraw + 10);
+assert_eq(ohdr_len, 4084, "header msg_len clamped to 4084");
+assert_eq(oconsumed, 4096, "consumed = 12 header + 4084 payload");
+
+# ================================================================
+# Wrapped ring: decode rejects a mid-event window (2.5.0)
+# ================================================================
+test_group("wrapped ring does not decode payload as a header");
+
+# Once the ring wraps, sakshi_ring_read_raw returns a window starting MID-EVENT,
+# so the first 12 bytes are message payload — caller data — not a header. The
+# decoder used to parse them anyway. No test covered a wrapped ring at all: the
+# groups above write ~60 bytes and never reach 4096.
+sakshi_ring_clear();
+sakshi_set_output(SK_OUT_BUFFER);
+var filler[200];
+for (var fi = 0; fi < 200; fi = fi + 1) { store8(&filler + fi, 90); }
+# 40 x (12 + 200) = 8480 bytes: wraps the 4096-byte ring twice over.
+for (var ei = 0; ei < 40; ei = ei + 1) { sakshi_info(&filler, 200); }
+sakshi_set_output(SK_OUT_STDERR);
+assert_gt(sakshi_ring_len(), 4095, "ring is full after wrapping");
+
+var wraw[4096];
+var wn = sakshi_ring_read_raw(&wraw, 4096);
+assert_eq(wn, 4096, "wrapped read returns a full window");
+
+# The window starts mid-event, so byte 8 is payload (90 = 'Z'), not a real
+# level. The decoder must refuse rather than emit a line built from log bytes.
+var wtext[512];
+var wtext_len = 0;
+var wconsumed = sakshi_ring_decode_event(&wraw, wn, &wtext, 512, &wtext_len);
+assert_eq(load8(&wraw + 8), 90, "byte 8 of a wrapped window is payload, not a level");
+assert_eq(wconsumed, 0, "decoder rejects a mid-event window");
+assert_eq(wtext_len, 0, "rejected decode yields no text");
+# NOTE: this particular window is rejected by the pre-existing msg_len > 4084
+# guard (bytes 10-11 are 0x5A5A = 23130), not by the level check. The level
+# check earns its keep on the harder shape below, where msg_len IS plausible.
+
+test_group("decode rejects a plausible-looking header with an impossible level");
+
+# Hand-built 12-byte header: a level sakshi never writes (90 = 'Z', a payload
+# byte) but a perfectly plausible msg_len of 4. The 4084 guard passes this, so
+# before the level check the decoder happily rendered four bytes of caller data
+# as a log line — which is what a forged header planted inside a logged string
+# looks like once the ring wraps onto it.
+var forged[32];
+store64(&forged, 123456789);        # ts
+store8(&forged + 8, 90);            # level: not 0-5, 10, 11 or 255
+store8(&forged + 9, 0);             # category
+store16(&forged + 10, 4);           # msg_len = 4 — well under the 4084 ceiling
+store8(&forged + 12, 80);
+store8(&forged + 13, 87);
+store8(&forged + 14, 78);
+store8(&forged + 15, 68);
+var ftext[128];
+var ftext_len = 0;
+assert_eq(sakshi_ring_decode_event(&forged, 16, &ftext, 128, &ftext_len), 0,
+          "impossible level rejected even with a plausible msg_len");
+assert_eq(ftext_len, 0, "forged header yields no text");
+
+# Every level sakshi actually writes must still decode.
+store8(&forged + 8, 3);             # SK_INFO
+assert_gt(sakshi_ring_decode_event(&forged, 16, &ftext, 128, &ftext_len), 0, "level 3 decodes");
+store8(&forged + 8, 11);            # SK_SPAN_EXIT
+assert_gt(sakshi_ring_decode_event(&forged, 16, &ftext, 128, &ftext_len), 0, "level 11 decodes");
+store8(&forged + 8, 255);           # META
+assert_gt(sakshi_ring_decode_event(&forged, 16, &ftext, 128, &ftext_len), 0, "level 255 decodes");
+
+# A well-formed event still decodes — the guard rejects bad levels, not all input.
+sakshi_ring_clear();
+sakshi_set_output(SK_OUT_BUFFER);
+sakshi_info("well formed", 11);
+sakshi_set_output(SK_OUT_STDERR);
+var graw[4096];
+var gn = sakshi_ring_read_raw(&graw, 4096);
+var gtext[256];
+var gtext_len = 0;
+assert_gt(sakshi_ring_decode_event(&graw, gn, &gtext, 256, &gtext_len), 0, "valid event still decodes");
+
+# ================================================================
 # Atomic ring buffer (v2.3.0) — MPSC, lock-free reservation writer
 # ================================================================
 test_group("atomic ring write");
@@ -230,6 +341,32 @@ sakshi_set_output_fd(devnull);
 sakshi_info("to devnull", 10);
 sakshi_set_output_fd(2);
 syscall(_SK_SYS_CLOSE, devnull);
+
+# ================================================================
+# Unusable output target is reported (2.5.0)
+# ================================================================
+test_group("set_output reports an unconfigured target");
+
+# Selecting a target that was never set up used to be silent — every later log
+# call was discarded with no diagnostic anywhere. The switch is still honoured;
+# the caller is now told the target cannot receive events.
+sakshi_output_file_close();
+assert_eq(sakshi_set_output(SK_OUT_FILE), 0 - 1, "FILE with no open file -> -1");
+
+sakshi_output_udp_close();
+assert_eq(sakshi_set_output(SK_OUT_UDP), 0 - 2, "UDP with no socket -> -2");
+
+sakshi_clear_emit_hook();
+assert_eq(sakshi_set_output(SK_OUT_HOOK), 0 - 3, "HOOK with no hook -> -3");
+
+assert_eq(sakshi_set_output(99), 0 - 4, "unknown target -> -4");
+assert_eq(sakshi_set_output(0 - 7), 0 - 4, "negative target -> -4");
+
+# Targets that need no prior setup stay silent successes.
+assert_eq(sakshi_set_output(SK_OUT_STDERR), 0, "STDERR -> 0");
+assert_eq(sakshi_set_output(SK_OUT_BUFFER), 0, "BUFFER -> 0");
+assert_eq(sakshi_set_output(SK_OUT_ATOMIC_RING), 0, "ATOMIC_RING -> 0");
+sakshi_set_output(SK_OUT_STDERR);
 
 # ================================================================
 # Edge cases
@@ -443,5 +580,36 @@ var diff = rf - f;
 if (diff < 0) { diff = 0 - diff; }
 assert_lt(diff, f / 100, "recalibrate within 1% of original freq");
 assert_gt(_sk_tsc_scale, 0, "scale still set after recalibrate");
+
+# ================================================================
+# Clock: calibration-failure fallback (2.5.0)
+# ================================================================
+test_group("clock: calibration-failure fallback");
+
+# Reproduces, portably, the state a coarse reference clock leaves behind.
+# On Windows PE _sk_clock_now_ns_raw is GetTickCount64 (~15.6 ms tick), so both
+# ends of the 10 ms calibration window land in one tick, dn == 0, and no scale
+# is ever computed. _sk_ticks_to_ns then multiplies by a zero scale and EVERY
+# timestamp is 0 — observed on 5 of 5 cold PE runs before this fix.
+#
+# Force that state here: init has run and failed to produce a scale.
+var saved_scale = _sk_tsc_scale;
+var saved_freq = _sk_tsc_freq_hz;
+_sk_tsc_scale = 0;
+_sk_clock_init_done = 1;
+
+# _sk_now_ns must fall back to the reference clock, NOT return 0, and NOT
+# re-enter the 10 ms calibration window on every call.
+var fb0 = _sk_now_ns();
+assert_gt(fb0, 0, "fallback ts non-zero when scale is 0");
+var fb1 = _sk_now_ns();
+assert(fb1 >= fb0, "fallback ts monotonic");
+assert_eq(_sk_tsc_scale, 0, "fallback did not silently recalibrate");
+assert_eq(_sk_clock_init_done, 1, "init not re-entered while marked done");
+
+# Restore the calibrated clock for anything that runs after this group.
+_sk_tsc_scale = saved_scale;
+_sk_tsc_freq_hz = saved_freq;
+assert_gt(_sk_now_ns(), 0, "calibrated path restored");
 
 var r = assert_summary();

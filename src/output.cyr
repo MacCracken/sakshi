@@ -1,7 +1,7 @@
 # output.cyr — output targets for sakshi
 # Supports: stderr (default), file, ring buffer (binary), UDP (binary), hook.
 # Target selection via sakshi_set_output / sakshi_set_emit_hook at runtime.
-# Depends: clock.cyr (for _sk_now_ns), format.cyr (for _sk_memcpy, _sk_bin_write_hdr),
+# Depends: clock.cyr (for _sk_now_ns), format.cyr (for _sk_memcpy),
 #          lib/fnptr.cyr (for subscriber hook dispatch — fncall6),
 #          lib/atomic.cyr (for the SK_OUT_ATOMIC_RING reservation writer —
 #          atomic_fetch_add / atomic_load / atomic_store)
@@ -53,6 +53,11 @@ fn sakshi_output_file(path): i64 {
     var fd = _sk_open(path, 1089, 0x1A4);
     #endif
     if (fd < 0) { return fd; }
+    # Close the previous descriptor first. Calling sakshi_output_file twice used
+    # to overwrite _sk_file_fd and leak the old fd for the life of the process —
+    # a log-rotating consumer leaks one per rotation until it hits RLIMIT_NOFILE,
+    # at which point _sk_open starts failing and logging stops.
+    if (_sk_file_fd >= 0) { syscall(_SK_SYS_CLOSE, _sk_file_fd); }
     _sk_file_fd = fd;
     _sk_output_target = SK_OUT_FILE;
     return fd;
@@ -102,24 +107,38 @@ fn sakshi_output_buffer(): i64 {
     return 0;
 }
 
-# Write a single byte into the ring buffer, advancing the write cursor
-fn _sk_ring_put(byte): i64 {
-    store8(&_sk_ring_buf + (_sk_ring_write & _SK_RING_MASK), byte);
-    _sk_ring_write = _sk_ring_write + 1;
-    return 0;
-}
-
 # Write a binary event into the ring buffer.
 # ts: pre-computed timestamp (callers share one _sk_now_ns per event)
 # level: log level, category: error category (0 for trace events)
 # msg: message pointer, msg_len: message length
 fn _sk_write_ring_event(ts, level, category, msg, msg_len): i64 {
+    # Clamp before the header is written. This was the ONE binary writer of the
+    # three that did not: _sk_write_aring_event and _sk_write_udp_event both cap
+    # at 256 first, and the 2026-04-15 audit's SA-001 fixed exactly this shape in
+    # the UDP header, but the ring path was never given the same treatment.
+    #
+    # Two ways the unclamped version went wrong, both silent:
+    #   - msg_len >= 65536: `store16` keeps only the low 16 bits, so the header
+    #     advertised (msg_len & 0xFFFF) while the loop below wrote the FULL
+    #     msg_len bytes. Every subsequent decode is then misaligned — the reader
+    #     resumes mid-event and every later event in the ring is garbage.
+    #   - 4085 <= msg_len <= 65535: the header is accurate but names an event
+    #     larger than the 4096-byte ring, so sakshi_ring_decode_event rejects it
+    #     (its `msg_len > 4084` guard) and the ring is undecodable from there on.
+    #
+    # 4084 = 4096 ring - 12 header: the largest event that can fit, and exactly
+    # what the decoder accepts. Clamping here rather than at 256 keeps every
+    # message that decodes correctly today decoding correctly.
+    var m_len = msg_len;
+    if (m_len > 4084) { m_len = 4084; }
+    if (m_len < 0) { m_len = 0; }
+
     # Build 12-byte header on stack, then copy into ring
     var hdr[12];
     store64(&hdr, ts);
     store8(&hdr + 8, level);
     store8(&hdr + 9, category);
-    store16(&hdr + 10, msg_len);
+    store16(&hdr + 10, m_len);
 
     # Copy header into ring (byte-by-byte for wrap safety)
     var hi = 0;
@@ -131,7 +150,7 @@ fn _sk_write_ring_event(ts, level, category, msg, msg_len): i64 {
 
     # Copy message bytes into ring
     var mi = 0;
-    while (mi < msg_len) {
+    while (mi < m_len) {
         store8(&_sk_ring_buf + (_sk_ring_write & _SK_RING_MASK), load8(msg + mi));
         _sk_ring_write = _sk_ring_write + 1;
         mi = mi + 1;
@@ -189,6 +208,23 @@ fn sakshi_ring_decode_event(buf, buf_len, dst, dst_cap, out_text_len): i64 {
     var level = load8(buf + 8);
     var cat = load8(buf + 9);
     var msg_len = load16(buf + 10);
+
+    # Reject a header whose level is not one sakshi ever writes. After the ring
+    # wraps, sakshi_ring_read_raw hands back a window that starts MID-EVENT, so
+    # the first 12 bytes the decoder sees are message payload, not a header —
+    # and payload is caller data. Validating the level against the exact set
+    # _sk_level_str knows (0-5 log, 10-11 span, 255 meta) turns a silent
+    # misparse of arbitrary bytes into a caller-visible "cannot decode", and
+    # makes a forged header planted inside a logged string far harder to land.
+    var lvl_ok = 0;
+    if (level >= 0 && level <= 5) { lvl_ok = 1; }
+    if (level == 10) { lvl_ok = 1; }
+    if (level == 11) { lvl_ok = 1; }
+    if (level == 255) { lvl_ok = 1; }
+    if (lvl_ok == 0) {
+        store64(out_text_len, 0);
+        return 0;
+    }
 
     # Sanity: max message that fits in a 4KB ring = 4096 - 12 header bytes
     if (msg_len > 4084) {
@@ -279,6 +315,11 @@ fn _sk_write_aring_event(ts, level, category, msg, msg_len): i64 {
     # concurrent reservations disjoint and matches the UDP packet cap.
     var m_len = msg_len;
     if (m_len > 256) { m_len = 256; }
+    # Clamp the LOW end too. event_size below feeds atomic_fetch_add on the
+    # shared reservation cursor, so a negative length would move that cursor
+    # BACKWARDS and break the disjointness the multi-producer writer depends on
+    # — every later reservation would overlap live data.
+    if (m_len < 0) { m_len = 0; }
     var event_size = _SK_BIN_HDR_SIZE + m_len;
 
     # Reserve a unique, non-overlapping byte range — the single multi-producer
@@ -355,6 +396,15 @@ fn sakshi_aring_clear(): i64 {
 # the Win64 PE syscall reroute whitelist, so SK_OUT_UDP emits nothing on a
 # PE target. Windows consumers must use the stderr or file target (both
 # routed). Tracked in issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md.
+#
+# NOT SUPPORTED ON macOS either (2.5.0). The Mach-O ESYSXLAT table translates
+# `socket` (41 -> BSD 97) but has NO entry for `sendto` (neither the x86 44 nor
+# the aarch64 206). That asymmetry is worse than a missing pair: the socket call
+# SUCCEEDS and returns a real fd, so sakshi_output_udp reported success and
+# flipped the target, and every event afterwards issued an untranslated syscall
+# number — silently emitting nothing on arm64, and on x86 running an unrelated
+# BSD call or taking SIGSYS. Refused up front below so the caller keeps a
+# working stderr/file target, exactly as the AGNOS branch does.
 var _sk_udp_fd: i64 = 0 - 1;
 
 # sockaddr_in: { sin_family: u16, sin_port: u16, sin_addr: u32, zero: u64 } = 16 bytes
@@ -370,10 +420,18 @@ fn sakshi_output_udp(ip, port): i64 {
     # Return error so the caller keeps the current stderr/file target.
     return 0 - 1;
     #endif
+    #ifdef CYRIUS_TARGET_MACOS
+    # macOS: socket translates, sendto does not (see the note above). Refuse
+    # rather than hand back a usable-looking fd for a transport that cannot send.
+    return 0 - 1;
+    #endif
     #ifndef CYRIUS_TARGET_AGNOS
+    #ifndef CYRIUS_TARGET_MACOS
     # socket(AF_INET=2, SOCK_DGRAM=2, 0)
     var fd = syscall(_SK_SYS_SOCKET, 2, 2, 0);
     if (fd < 0) { return fd; }
+    # Same fd-leak fix as sakshi_output_file above.
+    if (_sk_udp_fd >= 0) { syscall(_SK_SYS_CLOSE, _sk_udp_fd); }
     _sk_udp_fd = fd;
 
     # Build sockaddr_in
@@ -385,6 +443,7 @@ fn sakshi_output_udp(ip, port): i64 {
 
     _sk_output_target = SK_OUT_UDP;
     return fd;
+    #endif
     #endif
 }
 
@@ -408,6 +467,9 @@ fn _sk_write_udp_event(ts, level, category, msg, msg_len): i64 {
     var pkt[268];
     var pkt_msg_len = msg_len;
     if (pkt_msg_len > 256) { pkt_msg_len = 256; }
+    # Lower bound too: a negative length would make `total` below smaller than
+    # the 12-byte header and hand sendto a bogus length.
+    if (pkt_msg_len < 0) { pkt_msg_len = 0; }
 
     store64(&pkt, ts);
     store8(&pkt + 8, level);
@@ -417,7 +479,9 @@ fn _sk_write_udp_event(ts, level, category, msg, msg_len): i64 {
 
     var total = 12 + pkt_msg_len;
     #ifndef CYRIUS_TARGET_AGNOS
+    #ifndef CYRIUS_TARGET_MACOS
     syscall(_SK_SYS_SENDTO, _sk_udp_fd, &pkt, total, 0, &_sk_udp_addr, 16);
+    #endif
     #endif
     return 0;
 }
@@ -589,8 +653,31 @@ fn _sk_emit_span(ts, action_level, action_str, action_len, name, name_len, elaps
 # ================================================================
 # Public: set output target directly
 # ================================================================
+# Returns 0 when the selected target is actually able to receive events, and a
+# NON-ZERO diagnostic when it is not. The switch is honoured either way — the
+# caller asked for it — so this is additive information, not a behaviour change,
+# and every existing caller that ignores the return keeps working.
+#
+# Selecting a target that was never configured used to be completely silent:
+# sakshi_set_output(SK_OUT_FILE) without a preceding sakshi_output_file() leaves
+# _sk_file_fd at -1, and _sk_write_file then returns 0 without writing. Same for
+# SK_OUT_UDP with no socket, and for SK_OUT_HOOK with no hook installed — every
+# subsequent log call is discarded and NOTHING says so. That is the same class
+# of defect as the full span stack (span.cyr) and the truncating scratch buffer
+# (trace.cyr), both of which were made visible in the 2.4.x line on the same
+# principle: a tracing library that stops tracing has to say so.
+#
+#   -1  SK_OUT_FILE selected but no file is open   (sakshi_output_file first)
+#   -2  SK_OUT_UDP selected but no socket is open  (sakshi_output_udp first)
+#   -3  SK_OUT_HOOK selected but no hook installed (sakshi_set_emit_hook first)
+#   -4  target is not a known SK_OUT_* value       (events fall back to text)
 fn sakshi_set_output(target): i64 {
     _sk_output_target = target;
+    if (target < 0) { return 0 - 4; }
+    if (target > SK_OUT_ATOMIC_RING) { return 0 - 4; }
+    if (target == SK_OUT_FILE && _sk_file_fd < 0) { return 0 - 1; }
+    if (target == SK_OUT_UDP && _sk_udp_fd < 0) { return 0 - 2; }
+    if (target == SK_OUT_HOOK && _sk_emit_hook == 0) { return 0 - 3; }
     return 0;
 }
 
