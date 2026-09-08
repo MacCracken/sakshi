@@ -61,6 +61,61 @@ Declared, `lib sync` now covers 18 files and the vendored tree matches the
 pinned snapshot exactly — verified file-by-file against
 `~/.cyrius/versions/6.6.0/lib`.
 
+### Fixed — the Windows PE lane cross-built a binary that faults before `main`
+
+The `build-windows` job passed `CYRIUS_DCE=1` to the `cycc_win` backend, where
+dead-code elimination is **not** a size optimisation and is not safe:
+
+| | bytes | vs DCE=0 |
+|---|---|---|
+| `--win`, DCE=0 | 155,648 | — |
+| `--win`, DCE=1 | 155,648 | **74,386 bytes rewritten** |
+
+Same size, a third of the image different, and the result dies on
+`page fault on execute access to 0x0000000000000000` — a call through a null
+thunk, before the first log line. DCE nulls a function on the PE path that is
+still reachable rather than dropping it and relinking. Built without the flag
+the identical source produces a PE that runs clean and prints `sakshi smoke ok`.
+
+Not a 6.6.0 regression: the DCE-on PEs from 6.5.36 and 6.6.0 are
+**byte-identical**, and both fault. This is the already-reported cyrius
+cross-target DCE gap, one step worse than "no size win" — on `--win` it
+corrupts the artifact. The flag is removed from that lane with a comment to
+restore it once upstream lands the fix.
+
+`x86_64` is unaffected and keeps the flag: DCE there really does shrink the
+image (145,992 → 96,840, −34%) and the binary runs. `--aarch64` also shows the
+no-shrink-but-151,295-bytes-rewritten signature, but its lane executes the
+result under qemu and is passing, so it is left alone — flagged, not changed,
+since it could not be run locally to confirm either way.
+
+### Changed — Windows CI lane no longer installs a 32-bit stack or an X server
+
+Three pieces of setup that lane never needed, and one of them was actively
+harmful:
+
+- **`dpkg --add-architecture i386`** — removed. The artifact under test is
+  PE32+. On noble `wine` is a 50 kB `arch:all` metapackage depending on
+  `wine64 | wine32`, and `wine64` is amd64-native, so it satisfies the
+  dependency alone. Adding i386 made the following `apt-get update` pull a
+  second complete set of package indices for every configured repo and dragged
+  in the 32-bit wine stack.
+- **`xvfb` / `xvfb-run`** — removed. The smoke is a console program that writes
+  to stderr and creates no window; verified running with `DISPLAY` *and*
+  `WAYLAND_DISPLAY` unset. Supplying a display was not merely redundant: it is
+  what allows wine's first-run Mono/Gecko installer dialog to appear, and wine
+  is installed `--no-install-recommends`, so `wine-mono`/`wine-gecko` are absent
+  and wine would try to fetch them from winehq.org. With a broken binary in
+  front of it, a display also lets `winedbg` sit on a crash dialog instead of
+  failing — a hang rather than a red X.
+- **`WINEDLLOVERRIDES="mscoree,mshtml="` and `WINEDBG_NOCRASHDLG=1`** — added,
+  so that stays true regardless of what a future runner image ships.
+
+The gate itself is unchanged and still earns its keep: a real PE32+, really
+executed, asserting the known line reaches stderr. End-to-end on a cold prefix
+with no display, the whole run step is **9.1 s** (34 ms of that is the
+cross-compile — the Windows compile is the fastest of the four targets).
+
 ## [2.4.12] - 2026-08-30
 
 ### Fixed — `sakshi_span_enter` validated only one end of its buffer

@@ -182,17 +182,33 @@ jobs:
 
       - name: Install wine (PE runner)
         run: |
-          sudo dpkg --add-architecture i386
+          # 64-bit only, deliberately. The artifact under test is PE32+, and on
+          # noble `wine` is a 50kB arch:all metapackage depending on
+          # `wine64 | wine32` — wine64 is amd64-native and satisfies it alone.
+          # `dpkg --add-architecture i386` used to be here: it made the update
+          # below fetch a second full set of package indices for every repo and
+          # dragged in the 32-bit wine stack, for a binary that has no 32-bit
+          # code path. Removed in 2.4.13.
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends wine wine64 xvfb
+          sudo apt-get install -y --no-install-recommends wine wine64
 
       - name: Resolve dependencies
         run: cyrius deps
 
-      - name: Cross-build smoke (--win, DCE)
+      - name: Cross-build smoke (--win)
         run: |
+          # NO CYRIUS_DCE=1 here — deliberate, see 2.4.13.
+          # On the cycc_win backend DCE does not shrink the image (155648 bytes
+          # either way) but rewrites 74386 of them, and the result faults on an
+          # execute of address 0 before reaching main. Built without it, the
+          # same PE runs clean and prints the smoke line. Reproduced identically
+          # on 6.5.36 and 6.6.0 (the DCE-on PEs are byte-identical across both),
+          # so this is a long-standing cross-backend codegen bug, not a
+          # regression from the 6.6.0 bump — it is the already-reported cyrius
+          # cross-target DCE gap. Restore the flag once that lands.
+          # x86_64 is unaffected: DCE there shrinks 145992 -> 96840 and runs.
           mkdir -p build
-          CYRIUS_DCE=1 cyrius build --win -D SAKSHI_SMOKE programs/smoke.cyr build/sakshi-smoke.exe
+          cyrius build --win -D SAKSHI_SMOKE programs/smoke.cyr build/sakshi-smoke.exe
 
       - name: Verify PE32+ executable
         run: |
@@ -203,14 +219,24 @@ jobs:
       - name: Run under wine — assert log reaches stderr
         env:
           WINEDEBUG: "-all"
+          # The smoke is a console app; it never needs .NET or an HTML engine.
+          # wine is installed --no-install-recommends, so wine-mono/wine-gecko
+          # are absent and first-run prefix creation would otherwise try to
+          # fetch them from winehq.org. Stub them out.
+          WINEDLLOVERRIDES: "mscoree,mshtml="
+          # On a fault, fail with output instead of waiting on winedbg.
+          WINEDBG_NOCRASHDLG: "1"
           WINEPREFIX: ${{ github.workspace }}/.winepfx
           WINEARCH: win64
         run: |
           # The whole point of the gate: a clean-compiling PE that logged
           # NOTHING is the bug. Capture the binary's output and require the
-          # known line to actually appear. xvfb-run keeps wine happy without
-          # a display; the smoke binary writes to stderr (fd 2).
-          out=$(xvfb-run -a wine build/sakshi-smoke.exe 2>&1 || true)
+          # known line to actually appear. The smoke binary writes to stderr
+          # (fd 2) and creates no window, so it runs headless — xvfb-run was
+          # dropped in 2.4.13 (verified with DISPLAY and WAYLAND_DISPLAY both
+          # unset). Supplying a display is not merely redundant here: it is
+          # what lets wine's first-run Mono/Gecko installer dialog appear.
+          out=$(wine build/sakshi-smoke.exe 2>&1 || true)
           echo "----- PE binary output -----"
           echo "$out"
           echo "----------------------------"
