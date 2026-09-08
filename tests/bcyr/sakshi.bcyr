@@ -97,13 +97,13 @@ fn bench_log_kv_ring() {
 # line: a 21-byte message, a 9-byte key, a 21-byte URL value.
 fn bench_log_kv_hook_wide() {
     sakshi_log_kv(SK_INFO, "LLM client configured", 21,
-    "hoosh_url", 9, "http://127.0.0.1:8088", 21);
+      "hoosh_url", 9, "http://127.0.0.1:8088", 21);
     return 0;
 }
 
 fn bench_log_kv_ring_wide() {
     sakshi_log_kv(SK_INFO, "LLM client configured", 21,
-    "hoosh_url", 9, "http://127.0.0.1:8088", 21);
+      "hoosh_url", 9, "http://127.0.0.1:8088", 21);
     return 0;
 }
 

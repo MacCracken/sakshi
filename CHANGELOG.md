@@ -95,6 +95,51 @@ it: 60 events lapping the ring three times over, zero drops. That assertion is
 the one that catches a wrong boundary, which would otherwise silently discard
 events on the single-producer path every existing consumer uses.
 
+### Added — `cyrius fmt` and `cyrius doc` are now CI gates
+
+CI ran `cyrius lint`, tests and benchmarks, but never `fmt` or `doc` — so
+formatting drift and an undocumented public function could both land unnoticed.
+Both are now gates in the `build` job, and the release workflow inherits them
+through its `uses: ./.github/workflows/ci.yml` gate.
+
+**Format.** `cyrius fmt <file> --check` over the same auto-discovered set the
+lint gate already covers (`src/`, `programs/`, `tests/tcyr/`, `tests/bcyr/`,
+`fuzz/`, `dist/sakshi.cyr`). Unlike `cyrius lint` — which exits 0 even when it
+prints warnings, and so needs the grep the lint step carries — `cyrfmt` exits 1
+and names the first differing line, so the exit code *is* the gate.
+
+The tree was not canonically formatted when the gate was written: two files
+differed, in continuation indent on wrapped call arguments.
+
+| File | Lines |
+|---|---|
+| `tests/tcyr/sakshi.tcyr` | 218, 547, 549, 551 |
+| `tests/bcyr/sakshi.bcyr` | 100, 106 |
+
+One of those (218) was introduced by this release's own test work; the rest
+predate it. All reformatted; `src/`, `programs/` and `dist/` were already clean,
+so no library code changed and `dist/sakshi.cyr` is byte-identical.
+
+**Documentation coverage.** `cyrius doc --check` over `src/*.cyr`, which fails
+and names any function lacking a preceding doc comment. It counts the **public**
+surface only — `sakshi_*`, not the `_sk_*` internals — verified by correlation
+across the tree (format.cyr 0 public → 0 counted, error.cyr 8 → 8, output.cyr 20
+of 30 total → 20, span.cyr 8 of 9 → 8). So the gate is precisely "every public
+`sakshi_*` function carries a doc comment", covering all **46** of them, without
+demanding prose on private helpers. Scoped to `src/` because `dist/sakshi.cyr` is
+generated from it and would only re-report the same functions.
+
+**Both gates were proven able to fail before being trusted to pass.** A file with
+bad continuation indent exits 1 from `fmt --check`; a function with no comment
+exits 1 from `doc --check` and is listed by name. Worth stating explicitly: an
+ecosystem sibling's audit is titled *vacuous-gates-sweep*, and a gate that cannot
+fail is worse than no gate, because it reads as coverage.
+
+The `Format` step reuses the lint step's `[ -e "$f" ] || continue` guard, which
+is what makes the empty `fuzz/` directory safe: under bash an unmatched glob
+expands to the literal pattern, and the guard skips it. Confirmed by running the
+step verbatim under bash.
+
 ### Filed upstream — cyrius `lib/chrono.cyr` has the same defect
 
 sakshi's old comment said it "mirrors chrono.cyr's agnos clock", and it does:

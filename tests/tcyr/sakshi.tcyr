@@ -215,7 +215,7 @@ store8(&forged + 15, 68);
 var ftext[128];
 var ftext_len = 0;
 assert_eq(sakshi_ring_decode_event(&forged, 16, &ftext, 128, &ftext_len), 0,
-          "impossible level rejected even with a plausible msg_len");
+  "impossible level rejected even with a plausible msg_len");
 assert_eq(ftext_len, 0, "forged header yields no text");
 
 # Every level sakshi actually writes must still decode.
@@ -544,11 +544,11 @@ var longmsg[320];
 var li = 0;
 while (li < 320) { store8(&longmsg + li, 97); li = li + 1; }
 assert_eq(sakshi_log_kv(SK_INFO, &longmsg, 300, "k", 1, "v", 1), 48,
-"kv reports the 48 bytes that did not fit");
+  "kv reports the 48 bytes that did not fit");
 assert_eq(sakshi_log_kv(SK_INFO, &longmsg, 252, "k", 1, "v", 1), 0,
-"and reports 0 at exactly 256 composed bytes");
+  "and reports 0 at exactly 256 composed bytes");
 assert_eq(sakshi_log_kv(SK_INFO, &longmsg, 253, "k", 1, "v", 1), 1,
-"one byte over is one byte reported");
+  "one byte over is one byte reported");
 sakshi_ring_clear();
 
 sakshi_set_output_fd(2);
