@@ -5,6 +5,119 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.5] - 2026-09-23
+
+A calibration window the process spent stopped no longer installs a wrong clock
+rate. The fix is in sakshi's source, so consumers get it by re-vendoring
+`lib/sakshi.cyr`.
+
+### Fixed — a stalled calibration window could install a garbage scale
+
+`_sk_clock_init` computed the TSC frequency as `dt * 1000000000 / dn`, where `dt`
+is counter ticks and `dn` is reference-clock ns across a nominal 10 ms nanosleep
+window. The product wraps i64 once `dt` passes ~9.22e9 ticks, which is 2.89 s at
+this host's 3194 MHz. A window only gets that long when the process is stopped or
+descheduled inside it. The likeliest caller is `sakshi_clock_recalibrate`, whose
+doc recommends running it hourly from a low-priority context. The bug dates from
+2.2.0 and affects every x86_64 target (Linux, Windows, macOS). aarch64 reads
+`CNTFRQ_EL0` and AGNOS does not calibrate, so neither was affected.
+
+At 3194 MHz the wrap alternates every 5.78 s of stall:
+
+- **2.89–5.78 s: negative.** Nothing was installed. First init fell back to the
+  reference clock. A recalibration kept its old scale, but returned the negative
+  number as the new frequency.
+- **5.78–8.66 s: positive.** A garbage scale was installed, and the clock ran at
+  the wrong rate until the next recalibration. A 6.26 s window (2e10 ticks) read
+  248 MHz, which runs the clock 12.9× fast.
+
+A probe called `sakshi_clock_recalibrate` back to back and was stopped from
+outside with SIGSTOP, then continued. The rate is the clock's error against the
+reference over 100 ms, measured right after the stalled call:
+
+| Stop | 2.5.4 | 2.5.5 |
+|---|---|---|
+| 7 s | returned **559,709,896 Hz**; the clock then ran **+4,706,500 ppm** (5.7× fast) | returned 3,193,993,866 Hz; +1 ppm |
+| 4 s | returned **−1,407,601,954 Hz**; old scale kept | returned 3,193,953,542 Hz; +12 ppm |
+
+The frequency now comes from `_sk_clock_freq_hz(dt, dn)`, which changes two things:
+
+- **A window over 1 s is measured again, not used.** The helper returns 0 for it,
+  and the loop takes another window, as it already did when the reference clock
+  failed to advance. The bound is `_SK_WINDOW_MAX_NS`, 100× the nominal window.
+  The stalled call above took one window longer than in 2.5.4 (+12 to +18 ms).
+- **The division is split**, as the QPC conversion in `_sk_clock_now_ns_raw` is:
+  `(dt / dn) * 1e9 + ((dt % dn) * 1e9) / dn`. Wherever the old product did not
+  wrap, this gives exactly its answer, so normal windows calibrate to the same Hz
+  as before. With `dn` at most 1 s the remainder product stays under 1e18, so the
+  result is exact whenever it fits an i64.
+
+Either half fixes the realistic case alone, but neither closes the whole range.
+The split alone can overflow again once a stop passes ~9.2 s. The bound alone
+keeps the old product safe only for counters under 9.2 GHz. Together, every window
+the helper accepts is exact.
+
+The loop's `dn > 0 && dt > 0` guard moved into the helper; `n0 > 0` stays in the
+loop. `sakshi_clock_recalibrate` can no longer return a negative number. Its doc
+now says it returns 0 when no window gave a frequency, and that the previous
+calibration then stays in force.
+
+### Added — 9 test assertions (152 → 161)
+
+A new group in `tests/tcyr/sakshi.tcyr`, "clock: a stalled calibration window is
+measured again", calls `_sk_clock_freq_hz` directly:
+
+- The 6.26 s and 3.5 s windows above are refused.
+- The bound is exactly 1 s, inclusive.
+- A 1 s window of a 10 GHz counter is exact.
+- 28 normal windows, 10–640 ms at 1.3–4.3 GHz, give exactly the old
+  `dt * 1e9 / dn`.
+- A window the reference clock did not advance across, or the counter ran
+  backwards across, is refused.
+
+With 2.5.4's arithmetic factored into the helper unchanged, 4 of the 9 fail
+(157/161). Each failure prints the value 2.5.4 computed: 248,054,971 and
+−2,076,498,306 for the stalled windows, 3,194,000,000 for the window 1 ns over the
+bound, and −8,446,744,074 for the 10 GHz counter. The other 5 pin behavior that
+must not change. Five mutants of the fix were each caught:
+
+| Mutant | Caught by |
+|---|---|
+| No 1 s bound | 3 assertions |
+| No split | 1 |
+| Bound exclusive (`<` for `<=`) | 2 |
+| No `dn > 0` guard | SIGFPE: the group divides by zero |
+| No `dt > 0` guard | 1 |
+
+### Performance
+
+No hot-path code changed; calibration runs only at init and on recalibrate.
+2.5.4 and 2.5.5 were interleaved over 6 rounds each. Every benchmark is within
+±2.4%, moving both ways. `timestamp` went 21.95 → 22.32 ns, with overlapping
+ranges (21.68–22.26 and 22.04–22.66). Its `_sk_ticks_to_ns` is byte-identical in
+the two bench binaries, but sits 240 B later, behind the new helper.
+`clock_now_ticks` is byte-identical at the *same* address and still moved +1.1%.
+`trace_info` (−1.9%) and `hook_emit` (−2.4%) read the same clock and got faster.
+That is layout and run-to-run noise, not this change.
+
+### Verified
+
+All runs used cyrius 6.6.6.
+
+- **Gates.** `cyrius lint` reports 0 warnings on all 13 files, `cyrius fmt --check`
+  finds all 13 canonical, and `cyrius doc --check` passes. `dist/sakshi.cyr` is
+  regenerated and in sync with `src/`.
+- **Tests.** 161/161 pass on x86_64 Linux, and both test files pass. The suite
+  also passes 161/161 under qemu-aarch64 (3 of 3 runs) and under wine (5 of 5).
+- **Targets.** Every smoke prints `sakshi smoke ok`: x86_64 (`CYRIUS_DCE=1`,
+  97,520 B, +16), aarch64 under qemu (334,912 B, +8), and PE under wine, built both
+  DCE-on and DCE-off (166,400 B, +512, one 512 B file-alignment step). AGNOS
+  compiles clean at 93,120 B (+16, `CYRIUS_DCE=1`). Its `uptime_us` #95 still folds
+  to a literal `mov eax,95` at 2 sites.
+- **Security check.** No new syscall, buffer or external input. Every division in
+  the helper is by `dn`, which it checks is positive first. Without that check,
+  the new test group dies of SIGFPE.
+
 ## [2.5.4] - 2026-09-23
 
 Timestamps from different processes on one host are comparable again. The fix is

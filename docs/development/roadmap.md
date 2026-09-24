@@ -1,6 +1,6 @@
 # Sakshi Development Roadmap
 
-> **Current: v2.5.4** (pin: cyrius 6.6.6 — current). ⚠ Until 2.4.10 this repo was pinned to 6.5.0 with a developer `lib/` symlink into **6.4.49**, so it was tested and benchmarked against a language two minors behind the one it is folded into. For a stdlib repo that makes the results describe the wrong compiler; bump the pin as part of any change here, never as a follow-up. Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source — as of v2.2.10 the hot timestamp path (`_sk_now_ns`) has no `#ifdef CYRIUS_TARGET_WIN` branch — PE shares the calibrated-rdtsc path; the only Windows branch left in `src/clock.cyr` is the reference clock in `_sk_clock_now_ns_raw`, which calibrates and anchors the TSC (QueryPerformanceCounter since v2.5.4, `GetTickCount64` only as its fallback). The `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.3.0 adds the lock-free multi-producer `SK_OUT_ATOMIC_RING` target. v2.2.0 public API is stable.
+> **Current: v2.5.5** (pin: cyrius 6.6.6 — current). ⚠ Until 2.4.10 this repo was pinned to 6.5.0 with a developer `lib/` symlink into **6.4.49**, so it was tested and benchmarked against a language two minors behind the one it is folded into. For a stdlib repo that makes the results describe the wrong compiler; bump the pin as part of any change here, never as a follow-up. Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source — as of v2.2.10 the hot timestamp path (`_sk_now_ns`) has no `#ifdef CYRIUS_TARGET_WIN` branch — PE shares the calibrated-rdtsc path; the only Windows branch left in `src/clock.cyr` is the reference clock in `_sk_clock_now_ns_raw`, which calibrates and anchors the TSC (QueryPerformanceCounter since v2.5.4, `GetTickCount64` only as its fallback). The `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.3.0 adds the lock-free multi-producer `SK_OUT_ATOMIC_RING` target. v2.2.0 public API is stable.
 >
 > Shipped history lives in [`CHANGELOG.md`](../../CHANGELOG.md). This file tracks only what's ahead.
 
@@ -95,14 +95,6 @@ caller, `audit`, into kavach).
   164,864 B because DCE no longer compacts on PE, so the only gain is that the lane
   tests the same configuration as the others. Needs one green CI run before the
   comment is rewritten.
-- **TSC calibration overflows on a stalled window.** `_sk_clock_init` computes
-  `dt * 1000000000 / dn`, which wraps i64 once the 10 ms window stretches past
-  ~2.9 s at 3.2 GHz — a process stopped or descheduled mid-calibration. A negative
-  wrap installs nothing (first init falls back to the reference clock, a
-  recalibration keeps the old scale); a positive one installs a garbage scale, and
-  the clock runs at the wrong rate until the next recalibration. Likeliest from `sakshi_clock_recalibrate`, whose doc recommends a
-  low-priority context. Pre-existing since 2.2.0, found in the 2.5.4 review. Fix:
-  split the division as the QPC conversion does, or retry any window over ~1 s.
 - **UDP output on macOS may now be possible.** `sakshi_output_udp` refuses macOS
   because "the Mach-O ESYSXLAT table … has NO entry for `sendto`"
   (`src/output.cyr:447`). cyrius 6.6.5 (`a7477256`) added Mach-O routes for

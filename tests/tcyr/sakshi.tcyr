@@ -722,4 +722,50 @@ var fb2 = _sk_now_ns();
 assert_gte(fb2, fb1 - anc_tol, "fallback and calibrated clocks share a timeline (low)");
 assert_lte(fb2, fb1 + anc_tol, "fallback and calibrated clocks share a timeline (high)");
 
+# ================================================================
+# Clock: a stalled calibration window (2.5.5)
+# ================================================================
+test_group("clock: a stalled calibration window is measured again");
+
+# A window's frequency was dt * 1e9 / dn, and that product wraps i64 once dt
+# passes ~9.22e9 ticks: 2.9 s of a 3.2 GHz TSC. A 10 ms window only gets that
+# long when the process is stopped or descheduled inside it. Until 2.5.5 the
+# wrapped value was used as the frequency. Both windows below run at 3194 MHz.
+#
+# 6.26 s wrapped positive: 248 MHz was installed, and the clock ran 12.9x fast
+# until the next recalibration.
+assert_eq(_sk_clock_freq_hz(20000000000, 6261740764), 0, "a 6.26 s window is refused, not read as 248 MHz");
+# 3.5 s wrapped negative: nothing was installed, and sakshi_clock_recalibrate
+# returned the negative number as the new frequency.
+assert_eq(_sk_clock_freq_hz(11179000000, 3500000000), 0, "a 3.5 s window is refused, not read as a negative");
+# The bound is 1 s (_SK_WINDOW_MAX_NS), inclusive.
+assert_eq(_sk_clock_freq_hz(3194000004, 1000000001), 0, "1 ns over 1 s is refused");
+assert_eq(_sk_clock_freq_hz(3194000000, 1000000000), 3194000000, "exactly 1 s is used");
+
+# Inside the bound the split is exact for any counter whose rate fits in an i64.
+# The unsplit product wrapped here for any counter over 9.22 GHz.
+assert_eq(_sk_clock_freq_hz(9999999999, 1000000000), 9999999999, "1 s of a 10 GHz counter is exact");
+
+# Normal windows are unchanged. From 10 ms to 640 ms, for counters from 1.3 to
+# 4.3 GHz, the answer is exactly the old expression's.
+var fq_diffs = 0;
+var fq_cases = 0;
+var fq_dn = 10000000;
+while (fq_dn < 1000000000) {
+    for (var fq_g = 1; fq_g <= 4; fq_g = fq_g + 1) {
+        var fq_dt = fq_dn * fq_g + fq_dn / 3 + 7919;
+        if (_sk_clock_freq_hz(fq_dt, fq_dn) != fq_dt * 1000000000 / fq_dn) { fq_diffs = fq_diffs + 1; }
+        fq_cases = fq_cases + 1;
+    }
+    fq_dn = fq_dn * 2 + 12345;
+}
+assert_eq(fq_cases, 28, "28 normal windows checked");
+assert_eq(fq_diffs, 0, "each gives exactly dt * 1e9 / dn");
+
+# The loop's positivity guard moved into the helper. dn == 0 is what a reference
+# clock too coarse to advance across the window gives (GetTickCount64, PE's
+# fallback), and it must be refused rather than divided by.
+assert_eq(_sk_clock_freq_hz(31940000, 0), 0, "a window the reference did not advance across is refused");
+assert_eq(_sk_clock_freq_hz(0 - 31940000, 10000000), 0, "so is one the counter ran backwards across");
+
 var r = assert_summary();
