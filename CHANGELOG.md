@@ -5,6 +5,116 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.3] - 2026-09-23
+
+### Changed
+
+- **Toolchain `6.6.2` → `6.6.6`.** No sakshi source change. `lib/` is re-vendored
+  to the 6.6.6 stdlib snapshot. `cyrius deps` refreshed the declared modules and
+  their platform files. `cyrius lib sync --full` then refreshed the 26 undeclared
+  leftovers of the 6.6.2 snapshot that `deps` leaves in place (`io.cyr`, the bundled
+  sibling libs, …). The result is byte-identical to `~/.cyrius/versions/6.6.6/lib`
+  (111 files). `dist/sakshi.cyr` is regenerated, and only its version line changes.
+
+### Fixed — on Windows, `sakshi_output_file` overwrote the log instead of appending
+
+The fix is in the compiler, so it arrives with the pin and sakshi's source does
+not change. `sakshi_output_file` opens its target `O_WRONLY | O_CREAT | O_APPEND`.
+Before 6.6.6 the PE backend decoded only `O_CREAT` and `O_EXCL`; the access mode,
+`O_TRUNC` and `O_APPEND` were dropped. **On Windows every session therefore
+started writing at offset 0 and overwrote the previous session's log in place.**
+When an earlier session had written more bytes, its tail was left behind. 6.6.6's
+`_pe_open_flags` decodes the access mode, `O_CREAT`, `O_EXCL`, `O_TRUNC` and
+`O_APPEND` (cyrius CHANGELOG `[6.6.6]`). sakshi passes no `O_TRUNC`, so the
+`O_TRUNC|O_APPEND` divergence 6.6.6 still documents does not apply here.
+
+Measured A/B under wine. A probe calls `sakshi_output_file("append_probe.log")`,
+emits one `sakshi_info` line and closes, and is run twice:
+
+| PE build | log after two runs |
+|---|---|
+| cyrius 6.6.2 | **1 line** (38 B): run 2 overwrote run 1 |
+| cyrius 6.6.6 | **2 lines** (76 B): appended |
+
+Consumers get this fix from **their own** cyrius pin, not from this release.
+
+### Added — the README declares sakshi's ownership of the bare `ERR_*` set
+
+`## Error Format` now lists the canonical `ErrCode` values and states the rule:
+sakshi owns the unprefixed `ERR_*` names, and every other AGNOS Cyrius library
+prefixes its error-enum members (`<LIB>_ERR_*`). That README note was the last
+sakshi-side deliverable of Option B, so
+`issues/archive/2026-06-23-err-timeout-enum-collision-namespace.md` is resolved and
+archived. The leaf-lib member renames and the vidya note belong to those repos.
+
+### Known — `cyrius lint src/error.cyr` prints 17 notes about sakshi's own `ERR_*`
+
+These notes are informational: 0 warnings, exit 0, and the CI gate is unaffected.
+cyrlint's error-enum namespace rule identifies the owner by a substring match on the
+path as typed. `src/error.cyr` contains no "sakshi", so the base logger's own
+canonical set draws "reserved for the sakshi base logger" notes, while the identical
+enums in `dist/sakshi.cyr` draw none. The same check exempts a *colliding* leaf lib
+whose path merely contains "sakshi". This is a cyrius defect, filed upstream as
+`cyrius/docs/development/issues/2026-09-23-sakshi-err-enum-lint-owner-matched-by-path-spelling.md`.
+**It must land before that rule flips from note to warn**, or this repo's lint gate
+fails on its own enums.
+
+### Verified
+
+All on 6.6.6, across every lane CI runs:
+
+- **Gates.** `cyrius lint` shows 0 warnings on all 13 files. `cyrius fmt --check`
+  finds all 13 canonical, and `cyrius doc --check` finds every public `sakshi_*`
+  documented. `dist/sakshi.cyr` is in sync with `src/`.
+- **Tests.** 139/139 assertions pass, and both test files pass.
+- **Targets.** The x86_64, aarch64 (run under qemu) and PE (164,864 B, run under
+  wine) smokes each print `sakshi smoke ok`. AGNOS compiles clean (93,088 B), and
+  its `uptime_us` #95 still folds to a literal `mov eax,95`.
+- **The aarch64 smoke grew 268,744 → 334,880 B (+66,136, `CYRIUS_DCE=1`).** Most
+  of that comes from cyrius 6.6.5, which grew the aarch64 syscall-translation table
+  (`ESYSXLAT`) from 44 to 58 rows. The table is emitted inline at every syscall
+  site (+224 B per site), so this is compiler-side and sakshi cannot shrink it.
+  Routing is intact: the smoke still prints under qemu.
+- **Size.** sakshi's source did not change, so this is the toolchain delta alone;
+  DCE removes all of it except 648 B:
+
+  | x86_64 smoke | 6.6.2 | 6.6.6 |
+  |---|---|---|
+  | `CYRIUS_DCE=1` (CI) | 96,840 B | 97,488 B (+648) |
+  | no DCE | 145,992 B | 154,832 B (+8,840) |
+  | unreachable fns | 271 | 304 |
+
+- **Bench.** Both toolchains were benchmarked in one session: three runs on 6.6.2
+  and two on 6.6.6, with the last four alternating between them. The table shows
+  each toolchain's minimum. The emit-hook path
+  got faster. The three `+1 ns` rows are **not a regression**. In 6.6.5 the bench
+  report switched from truncating to whole nanoseconds to rounding half up, so a row
+  can move by up to 1 ns with no change in speed. At picosecond resolution, 6.6.6
+  measures `err_with_ctx` at 7,739 ps and `clock_now_ticks` at 8,878 ps; 6.6.2's
+  truncation printed those as 7 and 8. `err_unpack` is 16,005 ps, which prints 16
+  either way, so its 15 → 16 is run-to-run noise. Everything else is within ±3%.
+
+  | Benchmark | 6.6.2 | 6.6.6 | delta |
+  |---|---|---|---|
+  | `hook_emit` | 26 ns | 24 ns | −8% |
+  | `log_kv_hook` | 27 ns | 24 ns | −11% |
+  | `log_kv_hook_wide` | 29 ns | 24 ns | −17% |
+  | `err_with_ctx` | 7 ns | 8 ns | +1 ns |
+  | `clock_now_ticks` | 8 ns | 9 ns | +1 ns |
+  | `err_unpack` | 15 ns | 16 ns | +1 ns |
+  | `trace_info` | 588 ns | 591 ns | +1% |
+  | `span_cycle` | 1.141 µs | 1.130 µs | −1% |
+  | `ring_write` | 67 ns | 65 ns | −3% |
+  | `aring_write` | 69 ns | 68 ns | −1% |
+
+- **A DCE-on PE runs.** The PE lane builds without `CYRIUS_DCE=1` because DCE-on
+  PEs faulted at address 0 before `main` (2.4.13). cyrius fixed that in **6.6.1**:
+  DCE on PE no longer compacts. The workaround has therefore been unnecessary since
+  this repo's 6.6.2 pin (2.5.2). On 6.6.6 a DCE-on PE NOPs 242
+  unreachable fns (67,206 B; the image stays 164,864 B) and runs clean under wine.
+  **The CI lane is not changed in this patch**; restoring the flag is tracked in
+  the roadmap.
+
 ## [2.5.2] - 2026-09-12
 
 ### Changed

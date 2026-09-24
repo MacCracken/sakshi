@@ -89,6 +89,30 @@ Packed i64: `[63:32 context] [31:16 category] [15:0 error code]`
 | ERR_CAT_NET | 0x0007 | Network protocol |
 | ERR_CAT_AUTH | 0x0008 | Authentication/authorization |
 
+| Code | Value |
+|------|-------|
+| ERR_OK | 0 |
+| ERR_UNKNOWN | 1 |
+| ERR_INVALID | 2 |
+| ERR_NOT_FOUND | 3 |
+| ERR_PERMISSION | 4 |
+| ERR_TIMEOUT | 5 |
+| ERR_OVERFLOW | 6 |
+| ERR_BUSY | 7 |
+
+### Who owns the bare `ERR_*` names
+
+Cyrius enum members are flat globals: `enum ErrCode` does not namespace `ERR_TIMEOUT`.
+If two libraries both define `ERR_TIMEOUT`, they collide by name, the last definition
+wins, and `sakshi_err_new` then packs the other library's value into the code field.
+
+sakshi is the base logger that every AGNOS Cyrius project includes, so **it owns the
+unprefixed `ERR_*` set** above (codes and `ERR_CAT_*` categories). Every other library
+prefixes its error-enum members with its own name, as `SANDHI_ERR_TIMEOUT` does. It
+must never define a bare `ERR_*`. `cyrius lint` enforces this with its
+`lint_error_enum_namespace` rule, added in cyrius 6.4.51. For now it only prints a note;
+it becomes a warning once the ecosystem migration completes.
+
 ## License
 
 GPL-3.0-only

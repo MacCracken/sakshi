@@ -1,4 +1,27 @@
-# `ERR_TIMEOUT` enum constant collides ecosystem-wide — namespace `ErrCode` as `SAKSHI_ERR_*`
+# `ERR_TIMEOUT` enum constant collides ecosystem-wide — namespace `ErrCode` as `SAKSHI_ERR_*` — RESOLVED (Option B; closed in 2.5.3)
+
+**Status:** **RESOLVED for sakshi in 2.5.3 (2026-09-23), and archived.** Option B held:
+sakshi keeps the canonical bare `ERR_*` set, and its code did not change. Everything
+sakshi owed is done:
+
+- **The gate shipped** upstream in cyrius **6.4.51** as cyrlint's
+  `lint_error_enum_namespace` rule. The mechanism settled as the proposal's option
+  **1b**: the owner is matched by path, on the cyrius side. The rule is note-level
+  during the migration window and flips to `warn` afterwards. Since 6.6.5 it
+  token-scans enum bodies.
+- **The README ownership doc landed.** `## Error Format` now lists the canonical
+  codes and says who owns the bare names (2.5.3).
+- **A defect found while closing, filed upstream.** The owner check is a substring
+  match on the path as typed. sakshi's own `src/error.cyr` therefore draws 17 notes
+  when linted by relative path, which is how this repo's CI lints it. Meanwhile a
+  colliding leaf lib under any `sakshi`-named directory is exempt. Filed as cyrius
+  `docs/development/issues/2026-09-23-sakshi-err-enum-lint-owner-matched-by-path-spelling.md`.
+  It must land before the note → warn flip, or sakshi's CI lint gate fails on
+  sakshi's own canonical set.
+- **Not sakshi's, tracked elsewhere.** The leaf-lib member renames belong to the
+  mirror issues in yukti, ai-hwaccel, sigil and bote. The vidya `content/tracing/`
+  ownership note belongs to the vidya repo, and it had not been written as of
+  2026-09-23.
 
 **Filed:** 2026-06-23 (by a hoosh consumer — hoosh 2.4.7 toolchain bump to cyrius 6.2.37)
 **Severity:** Medium — `last-definition-wins` build warning today; latent
