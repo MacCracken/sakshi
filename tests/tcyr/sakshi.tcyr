@@ -6,6 +6,12 @@ include "lib/fnptr.cyr"
 
 include "src/lib.cyr"
 
+# Taken before ANY sakshi call, so before _sk_clock_init has run: the clock
+# groups at the end check that a counter reading from before calibration still
+# converts to the reference time it was taken at (2.5.4).
+var pre_cal_ticks = _sk_now_ticks();
+var pre_cal_ref = _sk_clock_now_ns_raw();
+
 # ================================================================
 # Error codes
 # ================================================================
@@ -607,6 +613,76 @@ assert_lt(diff, f / 100, "recalibrate within 1% of original freq");
 assert_gt(_sk_tsc_scale, 0, "scale still set after recalibrate");
 
 # ================================================================
+# Clock: anchored to the reference clock (2.5.4)
+# ================================================================
+test_group("clock: anchored to the reference clock");
+
+# The property that makes two PROCESSES' timestamps comparable: each one tracks
+# the shared reference clock, not its own counter-origin extrapolation. Checked
+# in-process as "the reference reading lands between two anchored timestamps
+# taken around it". Before 2.5.4 the conversion counted from the counter's
+# origin with a per-process scale, and on the host this was written on it sat
+# 29-67 SECONDS off the reference (~76,000 s under wine), different in every
+# run. The tolerance only has to absorb the anchor bracket (~1 us) plus
+# scale error times the time since calibration (~50 ppm of well under a second
+# here), so 1 ms is loose by three orders of magnitude and still fails the old
+# conversion by four.
+var anc_tol = 1000000;
+var an0 = _sk_now_ns();
+var anref = _sk_clock_now_ns_raw();
+var an1 = _sk_now_ns();
+assert_gte(anref, an0 - anc_tol, "reference not ahead of the anchored clock");
+assert_lte(anref, an1 + anc_tol, "reference not behind the anchored clock");
+
+# A counter reading from BEFORE calibration (the one this file took first)
+# converts to the reference time it was taken at: the conversion reaches back
+# across the anchor, so the only error is the scale's ~20 ppm over the fraction
+# of a second in between. The obvious unfolded form, ns0 + (t - tsc0) * scale,
+# gets exactly this reading wrong with the unsigned multiply sakshi uses — the
+# delta is negative and wraps to ~2^64 ticks, centuries away.
+var pre_cal_ns = _sk_ticks_to_ns(pre_cal_ticks);
+assert_gte(pre_cal_ref, pre_cal_ns - anc_tol, "pre-calibration reading lands on its reference time (low)");
+assert_lte(pre_cal_ref, pre_cal_ns + anc_tol, "pre-calibration reading lands on its reference time (high)");
+
+# ================================================================
+# Clock: recalibration re-anchors without stepping back (2.5.4)
+# ================================================================
+test_group("clock: recalibrate re-anchors, never back");
+
+# Drift is simulated by shifting the folded anchor, _sk_tsc_offset: the
+# conversion then reads a full second off the reference, exactly as if its
+# scale had drifted that far.
+#
+# Behind: recalibration must drop the offset — the forward step is what makes a
+# long-running process's timestamps comparable with other processes' again.
+_sk_tsc_offset = _sk_tsc_offset - 1000000000;
+var rb0 = _sk_now_ns();
+sakshi_clock_recalibrate();
+var rb1 = _sk_now_ns();
+var rbref = _sk_clock_now_ns_raw();
+assert_gt(rb1, rb0 + 900000000, "a clock behind the reference steps forward onto it");
+assert_lte(rbref, rb1 + anc_tol, "and lands on the reference, not short of it");
+assert_gte(rbref, rb1 - anc_tol, "and not past it");
+
+# Ahead: snapping back onto the reference would repeat a second of time — a later
+# event stamped earlier than one already emitted, and a straddling span negative.
+# The lead is held instead.
+_sk_tsc_offset = _sk_tsc_offset + 1000000000;
+var ra0 = _sk_now_ns();
+sakshi_clock_recalibrate();
+var ra1 = _sk_now_ns();
+assert_gte(ra1, ra0, "a clock ahead of the reference is never stepped back");
+assert_gt(ra1, _sk_clock_now_ns_raw() + 900000000, "it holds its lead instead");
+
+# Drop the simulated lead so later groups see a clock on the reference again.
+_sk_tsc_offset = _sk_tsc_offset - 1000000000;
+var rr0 = _sk_now_ns();
+var rr = _sk_clock_now_ns_raw();
+var rr1 = _sk_now_ns();
+assert_gte(rr, rr0 - anc_tol, "clock back on the reference for later groups (low)");
+assert_lte(rr, rr1 + anc_tol, "clock back on the reference for later groups (high)");
+
+# ================================================================
 # Clock: calibration-failure fallback (2.5.0)
 # ================================================================
 test_group("clock: calibration-failure fallback");
@@ -636,5 +712,14 @@ assert_eq(_sk_clock_init_done, 1, "init not re-entered while marked done");
 _sk_tsc_scale = saved_scale;
 _sk_tsc_freq_hz = saved_freq;
 assert_gt(_sk_now_ns(), 0, "calibrated path restored");
+
+# 2.5.4: the fallback returns the reference clock and the calibrated path is
+# anchored to it, so the two share one timeline. Before, switching between them
+# jumped by the counter-origin offset — tens of seconds on the host this was
+# measured on — which is what a process whose calibration failed looked like next
+# to one whose calibration worked.
+var fb2 = _sk_now_ns();
+assert_gte(fb2, fb1 - anc_tol, "fallback and calibrated clocks share a timeline (low)");
+assert_lte(fb2, fb1 + anc_tol, "fallback and calibrated clocks share a timeline (high)");
 
 var r = assert_summary();

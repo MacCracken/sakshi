@@ -5,6 +5,220 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.4] - 2026-09-23
+
+Timestamps from different processes on one host are comparable again. The fix is
+in sakshi's source, so consumers get it by re-vendoring `lib/sakshi.cyr`. Their
+cyrius pin does not matter, unlike 2.5.3's append fix.
+
+### Fixed — two processes on one host disagreed about the time by seconds
+
+`_sk_now_ns` computed `(tsc * scale) >> 32`. That is counter time since the
+counter's own origin, which is roughly the host's uptime. Every process calibrates
+its own `scale` over one 10 ms window, so each process's calibration error was
+multiplied by the whole uptime. Within a process, ordering and span durations were
+fine, because both ends share one scale. Between processes they were not. The
+cyrius 6.6.6 append fix made this visible on Windows, because PE log files now
+hold several sessions side by side.
+
+A probe appends one `sakshi_info` line to a file and exits. It was run back to
+back, and the table shows the gap between consecutive timestamps. Both versions
+were measured in the same session on one host (x86_64 Linux, ~35 h uptime, wine
+11.17, qemu-user):
+
+| Target | 2.5.3 | 2.5.4 | Real gap |
+|---|---|---|---|
+| x86_64 Linux | +0.77, +3.05, **−0.01**, +3.40, **−16.67**, +12.42, +3.92 s | +10.88 … +11.03 ms | ~11 ms |
+| Windows PE (wine) | **−528**, +908, +104, **−885**, +352 s | +36.5 … +37.8 ms | ~37 ms |
+| aarch64 (qemu) | +9.2 … +9.9 ms | +9.6 … +10.4 ms | ~10 ms |
+
+aarch64 was never affected: `CNTFRQ_EL0` is architectural, so every process
+derives the same scale.
+
+**The conversion is now anchored at calibration.** The closing sample of the
+calibration window is a reference-clock reading `ns0` (`_sk_clock_now_ns_raw`)
+taken at counter value `tsc0`. From it,
+`ns(t) = ns0 + ((t - tsc0) * scale >> 32)`. Error now grows only with the time
+since *this* process calibrated, not with uptime. The anchor is stored pre-folded
+as `_sk_tsc_offset = ns0 - (tsc0 * scale >> 32)`, so the hot path is 2.5.3's
+multiply plus one add. Right after calibration, the offset of `_sk_now_ns` from
+the reference clock over cold starts:
+
+| | 2.5.3 | 2.5.4 |
+|---|---|---|
+| x86_64 Linux (40 starts) | 44.4 s mean, 57.5 s max | **1.06 µs** mean, 1.48 µs max |
+| Windows PE, wine (15 starts) | 76,400 s mean | **1.09 µs** mean, 1.67 µs max |
+
+The calibration-failure fallback added in 2.5.0 returns the reference clock
+directly, so it is now on the same timeline as the calibrated path. Before this,
+switching between the two paths jumped by the counter-origin offset, tens of
+seconds on the measuring host.
+
+### Fixed — `sakshi_clock_recalibrate` could step the clock backwards by seconds
+
+With the unanchored conversion, a new scale re-multiplied the whole uptime: a
+50 ppm change moved every timestamp by ~6 s at 35 h uptime. One call to 2.5.3's
+`sakshi_clock_recalibrate` moved the clock by **−17.0 s to +4.4 s, and backwards
+in 8 of 10 runs**.
+
+It now re-anchors, dropping the offset the old scale accumulated, and it never
+steps the clock back. At the new anchor tick, `_sk_clock_install` starts the new
+conversion from whichever is later: the reference reading, or the old
+conversion's value at that tick. A clock that ran slow steps forward onto the
+reference. A clock that ran fast holds its lead instead of repeating time, and the
+new scale stops the lead from growing. In 2.5.4 the clock advances across a
+recalibration by exactly the call's own duration: +10.08 … +10.12 ms over 10 runs.
+
+### Fixed — x86_64 calibrated the TSC 246 ppm low
+
+The window read reference-then-counter at its start and counter-then-reference at
+its end. The part of the reference syscall that fell outside the counter reads
+therefore landed on the same side at both ends, and did not cancel. `dn` came out
+about one syscall (~2.5 µs, cold after the sleep) longer than `dt`. Both ends now
+use `_sk_clock_sample`: one reference read bracketed by two counter reads and
+credited to their midpoint, the tightest of 5 such brackets. Over 40 cold starts
+each, against a 1 s reference window (3194.000 MHz):
+
+| | mean | sd | range |
+|---|---|---|---|
+| 2.5.3 | −246.0 ppm | 30.5 | −348.9 … −184.8 |
+| 2.5.4 | **+2.7 ppm** | 17.6 | −25.6 … +47.8 |
+
+This matters more now: with the anchor in place, the scale error is the rate at
+which a process's timestamps drift off the reference. 246 ppm is 0.9 s per hour.
+The choice of 5 was measured too (40 cold starts per setting). **One bracket is
+worse than none**, at +124.5 ppm mean and 111.0 ppm sd, because the first read
+after the sleep is slow and lopsided. 3, 5 and 9 brackets were all unbiased
+(+0.8, +4.4, +0.2 ppm mean) at ~24 ppm sd. 5 leaves room for two preempted reads.
+
+### Fixed — on Windows, every timestamp and span ran ~1.6× fast
+
+PE calibrated against `GetTickCount64`. Measured under wine, it steps by +16 or
++17 ms every 16.1–16.5 ms, which is longer than the 10 ms window. The first window
+that saw `dn > 0` therefore saw one whole step against ~10 ms of TSC. Every PE
+process calibrated this host's 3194 MHz TSC at **1894–2017 MHz, 37.5% low**. That
+inflated every PE span 1.6× and every PE timestamp with it. The test suite has
+never run on PE in CI. Under wine its `ns_delta < 12 ms` assertion fails on 7 of
+7 runs of 2.5.3, and `recalibrate within 1%` fails on 1 of 7.
+
+The reference clock is now QueryPerformanceCounter. cyrius 6.6.5 routes it as
+`syscall(0xF038)`, with QueryPerformanceFrequency as `0xF039`; the roadmap had
+asked for this. `GetTickCount64` remains the fallback if the frequency query ever
+fails. The syscalls are spelled raw, as `lib/chrono.cyr` does, so `dist/sakshi.cyr`
+keeps building for PE in consumers that do not list the stdlib `syscalls` module.
+Over 15 cold starts under wine, PE now calibrates at 3193.65–3193.87 MHz, +2.0 ppm
+(sd 19.0) against the TSC's rate on wine's QPC. The full suite passes 152/152
+under wine on 5 of 5 runs.
+
+### Changed — timestamps count from the reference clock's origin (visible, not breaking)
+
+This is 2.2.0's "tick origin shift" in reverse. Values are now on the reference
+clock's timeline:
+
+- **Linux:** `CLOCK_MONOTONIC_RAW`, as in 2.1.x.
+- **Windows:** QPC.
+- **macOS:** `clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)`.
+- **AGNOS:** unchanged. It always read `uptime_us` directly.
+
+Anyone comparing *absolute* timestamps across the 2.5.3 → 2.5.4 boundary sees a
+one-time jump, backwards on the measuring host. It is tens of seconds on x86_64
+Linux, and far more on PE, whose old clock ran 1.6× fast from boot. Span elapsed and in-process ordering are
+unaffected. Downstream uses were checked. vidya takes only `_sk_now_ns()`
+deltas. agnostic's and agnosai's hooks ignore `ts`. None of the new internal
+names collide with any symbol in the ecosystem.
+
+### Changed — aarch64 init now makes one reference-clock read
+
+aarch64 used to issue no syscalls at init. It now takes one 5-read sample to
+anchor (`clock_gettime`, which cyrius translates from x86 228 to aarch64 113).
+kybernet's base seccomp policy allows `clock_gettime` on both arches. Its comment
+at `kybernet/src/lib/seccomp.cyr:479` says the aarch64 arm "issues nothing", which
+is now stale. If the read fails, aarch64 falls back to 2.5.3's counter-origin
+conversion. That conversion is still consistent across processes.
+
+### Added — 13 test assertions (139 → 152), each shown to fail without its fix
+
+Three groups in `tests/tcyr/sakshi.tcyr` cover the new behavior:
+
+- **Anchored to the reference clock.** A reference reading lands between two
+  timestamps taken around it, within 1 ms. A counter reading taken on the file's
+  first line, before calibration, converts to the reference time it was taken at.
+- **Recalibrate re-anchors, never back.** A clock pushed 1 s behind steps forward
+  onto the reference. One pushed 1 s ahead is never stepped back.
+- **Fallback shares the timeline.** The calibration-failure fallback and the
+  calibrated path agree to within 1 ms.
+
+Four mutants of `src/clock.cyr` were each caught:
+
+| Mutant | Assertions failed |
+|---|---|
+| No anchor (2.5.3's conversion) | 5 |
+| Unfolded `ns0 + (t - tsc0) * scale` with the unsigned multiply | 1 (the pre-calibration reading wraps) |
+| No hold-the-lead clamp | 4 |
+| Never re-anchors | 5 |
+
+### Performance
+
+2.5.3 and 2.5.4 were interleaved over 15 rounds in one session. The table shows
+the mean of each.
+
+| Benchmark | 2.5.3 | 2.5.4 | delta |
+|---|---|---|---|
+| `timestamp` | 21.87 ns | 22.19 ns | +0.3 ns; the run ranges overlap (21.56–22.22 vs 21.47–22.53) |
+| `clock_now_ticks` | 9.03 ns | 9.10 ns | flat, unchanged code |
+| `hook_emit` | 24.68 ns | 25.11 ns | +1.7% |
+| `span_cycle` | 1.151 µs | 1.171 µs | +1.7% |
+| `trace_info` | 594.5 ns | 607.1 ns | +2.1% |
+| `aring_write` | 69.4 ns | 70.9 ns | +2.1%, **never reads the clock** |
+| `log_kv_ring` | 79.1 ns | 77.7 ns | −1.8% |
+
+Every other benchmark is within ±2%. The ±2% moves go both ways, and they appear
+on benchmarks that never read the clock: `aring_write` above, and `trace_filtered`
+(−1.9%), which returns before reading it. That is code layout shifting, not this
+change. The anchor was first written unfolded, as
+`ns0 + ((t - tsc0) * scale >> 32)`, which needs a signed multiply. Interleaved
+over 5 rounds, it cost **+0.70 ns** on `timestamp` (21.94 → 22.64 ns). Folded
+into one offset, it measured 21.92 ns, and the multiply keeps 2.5.3's exact
+bytes.
+
+### Known
+
+- **The remaining error is per-process drift.** Scale error is ~18 ppm (1 sd,
+  x86_64 Linux), about 0.07 s per hour since the last calibration.
+  `sakshi_clock_recalibrate`, whose doc now says it re-anchors, bounds it.
+- **Under wine, QPC is the host's `CLOCK_MONOTONIC`**, not `MONOTONIC_RAW`. On the
+  measuring host the two were 10.2 s apart and diverging at 80 ppm. PE processes
+  agree with each other, and native Linux processes agree with each other, but the
+  two groups are on different timelines. On real Windows, QPC is Windows' own
+  monotonic clock. The roadmap's real-hardware check now covers this.
+- **macOS was not built.** The 6.6.6 install ships no Mach-O backend, and CI has no
+  macOS lane. The macOS branch of `_sk_clock_now_ns_raw` is unchanged, but the
+  anchor now reads it too.
+- **Calibration can overflow on a stalled window.** This review found a
+  pre-existing (2.2.0) `i64` overflow when the window stretches past ~2.9 s. It is
+  filed in the roadmap rather than bundled here.
+
+### Verified
+
+All runs used cyrius 6.6.6.
+
+- **Gates.** `cyrius lint` reports 0 warnings on all 13 files, `cyrius fmt --check`
+  finds all 13 canonical, and `cyrius doc --check` passes. `dist/sakshi.cyr` is in
+  sync with `src/`.
+- **Tests.** 152/152 pass on x86_64 Linux, both test files pass, and the suite
+  also passes 152/152 under qemu-aarch64 (3 of 3 runs) and under wine (5 of 5).
+- **Targets.** The x86_64 (`CYRIUS_DCE=1`, 97,504 B, +16) and aarch64 (334,904 B,
+  +24, run under qemu) smokes print `sakshi smoke ok`. So does the PE smoke
+  (165,888 B, +1,024), built both DCE-on and DCE-off. AGNOS compiles clean at
+  93,104 B (+16). Its `uptime_us` #95 still folds to a literal `mov eax,95`
+  (2 sites, as in 2.5.3), with none in the Linux build.
+- **Security check.** On PE, QPC and QPF each write 8 bytes into the existing
+  16-byte `ts` buffer. A failed QPC leaves the pre-zeroed 0, which every caller
+  treats as "no reading", and a failed QPF falls back to `GetTickCount64`. aarch64's
+  new init read is the existing Linux `clock_gettime` path: a 16-byte timespec into
+  the same buffer, with its return checked as before. There is no new buffer and no
+  external input.
+
 ## [2.5.3] - 2026-09-23
 
 ### Changed

@@ -7,7 +7,8 @@
 ```
 sakshi
 ├── syscalls   — arch-dispatched syscall numbers (x86_64 / aarch64 / AGNOS)
-├── clock      — cycle-counter timestamps (rdtsc / cntvct_el0), TSC calibration
+├── clock      — cycle-counter timestamps (rdtsc / cntvct_el0), calibrated and
+│                anchored to the platform monotonic clock (comparable across processes)
 ├── error      — packed i64 error codes (code + category + optional context)
 ├── trace      — log levels (fatal/error/warn/info/debug/trace), structured output
 ├── span       — enter/exit function tracking with timing
