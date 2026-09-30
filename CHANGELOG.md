@@ -5,6 +5,28 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.6] - 2026-09-30
+
+Comment-only release: three agnos clock comments in `src/clock.cyr` described the clock sakshi
+used before 2.5.1 and the calibration agnos did before 1.57.6. No code, test or behaviour
+changes; `dist/sakshi.cyr` differs from 2.5.5 only in those comments and the version stamp.
+
+### Fixed — stale agnos clock comments
+
+- **The `_sk_clock_now_ns_raw` agnos arm** said `#95` (`uptime_us`) is "calibrated at boot
+  against the live tick". Since agnos 1.57.6 the kernel calibrates it against the ACPI PM timer
+  when the FADT advertises one, falling back to live LAPIC ticks whose 100 Hz reload is itself
+  measured against the PM timer or the PIT (agnos `docs/development/agnos-userland-abi.md`,
+  row 95). The comment now says so, and that `-1` is permanent for the boot once refused.
+- **`_sk_clock_init` and `_sk_now_ns`** said agnos "uses uptime_ms directly" / "Read uptime_ms
+  directly". Since 2.5.1 agnos reads `#95` (µs) first and falls back to `#40` (`uptime_ms`)
+  only when `#95` answers -1, which is what the code does. Both comments now describe that, and
+  why sakshi does no TSC calibration of its own there (the kernel already calibrated the TSC
+  behind `#95`).
+
+cyrius re-folds `lib/sakshi.cyr` from this release's `dist/sakshi.cyr` (a comment-only diff).
+Toolchain pin unchanged (`6.6.6`).
+
 ## [2.5.5] - 2026-09-23
 
 A calibration window the process spent stopped no longer installs a wrong clock
