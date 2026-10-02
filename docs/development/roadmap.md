@@ -85,6 +85,11 @@ caller, `audit`, into kavach).
   Detail:
   [`issues/archive/2026-06-23-err-timeout-enum-collision-namespace.md`](issues/archive/2026-06-23-err-timeout-enum-collision-namespace.md).
 
+## Patch follow-up — recorded by cyrius 6.6.12 (2026-10-02)
+
+- The CI "Run under qemu" step calls `qemu-aarch64-static`, which exists only after the apt step that
+  installs it: order the steps (or call `qemu-aarch64`), so the job does not depend on step order by luck.
+
 ## Patch follow-ups (from the 2.5.3 and 2.5.4 patches)
 
 - **Restore `CYRIUS_DCE=1` on the `build-windows` CI lane.** It was dropped in
