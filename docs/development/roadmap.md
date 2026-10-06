@@ -114,3 +114,12 @@ caller, `audit`, into kavach).
   (where QPC is the host's CLOCK_MONOTONIC). To close both, run the same two-session
   probe once on a real Windows host: the log must hold both lines, with the second
   timestamp later than the first by the real gap between the runs.
+
+## Recorded by cyrius 6.6.17 (2026-10-05) — for the next cyrius pin move
+
+⛔ **Nothing to do until cyrius 6.6.17 is tagged and out.** Docs-only note from the cyrius 6.6.17 lanes; each item
+is this repo's to adopt when it pins ≥ 6.6.17. Nothing here gates a cyrius release.
+
+- **`[build] defines` is read from 6.6.17** (cyrius m4): the `-D SAKSHI_SMOKE` on the `cyrius build` CI line
+  becomes redundant (an explicit `-D` REPLACES the manifest list, so keeping it is harmless). A
+  `CYRIUS_DCE=1 cyrius build …` CI prefix can become `[build] dce = true`.
