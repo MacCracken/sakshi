@@ -17,3 +17,12 @@ fi
 
 echo "=== sakshi test suite ==="
 "$CYRIUS" test
+
+# The raw-include test again, built with NO auto-prepend: `cyrius test` supplies
+# the [deps] stdlib, which masks a bundle missing its requires block. See the
+# header of tests/tcyr/raw_include.tcyr. Matches CI.
+echo "=== raw include of dist/sakshi.cyr (no auto-prepend) ==="
+mkdir -p build
+"$CYRIUS" build --no-deps tests/tcyr/raw_include.tcyr build/raw_include
+./build/raw_include
+echo "raw include: ok"

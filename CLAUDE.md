@@ -37,7 +37,8 @@ src/
   format.cyr      — fixed-buffer message formatting, binary event format
   output.cyr      — output targets (stderr, file, ring buffer, UDP)
 dist/
-  sakshi.cyr      — generated single-file bundle (scripts/bundle.sh)
+  sakshi.cyr      — generated single-file bundle (`cyrius distlib`)
+  sakshi.deps     — its stdlib leaves (fnptr, atomic), written by distlib
 ```
 
 Single distribution. Internal consumers (Cyrius stdlib, sibling AGNOS crates) include `src/lib.cyr` directly. External consumers pull the generated `dist/sakshi.cyr`. The pre-2.0 slim/full split is gone — `CYRIUS_DCE=1` prunes unused surface to roughly the same size as the old slim bundle.

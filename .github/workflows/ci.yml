@@ -108,15 +108,24 @@ jobs:
           [ $fail -eq 0 ] || { echo "doc: undocumented public functions present"; exit 1; }
           echo "doc: every public sakshi_* function documented ✓"
 
-      - name: Verify dist/sakshi.cyr is in sync with src/
+      - name: Verify dist/ is in sync with src/ (cyrius distlib)
+        # `cyrius distlib --check` regenerates dist/sakshi.cyr + dist/sakshi.deps
+        # from the `[lib] modules` in cyrius.cyml into scratch copies and exits 1
+        # when either differs from the committed file. scripts/bundle.sh did this
+        # until 2.5.7; distlib also compile-verifies the bundle on every target
+        # and writes its requires block, which bundle.sh stripped.
+        # Then regenerate in place and require a clean tree, so a dist/ file the
+        # check does not cover cannot drift either.
         run: |
-          sh scripts/bundle.sh
-          if ! git diff --quiet dist/sakshi.cyr; then
-            echo "ERROR: dist/sakshi.cyr is stale. Run 'sh scripts/bundle.sh' and commit the result."
-            git --no-pager diff dist/sakshi.cyr | head -40
+          cyrius distlib --check
+          cyrius distlib
+          if ! git diff --quiet -- dist/ || [ -n "$(git status --porcelain -- dist/)" ]; then
+            echo "ERROR: dist/ is stale. Run 'cyrius distlib' and commit the result."
+            git status --porcelain -- dist/
+            git --no-pager diff -- dist/ | head -40
             exit 1
           fi
-          echo "dist/sakshi.cyr matches src/ ✓"
+          echo "dist/sakshi.cyr + dist/sakshi.deps match src/ ✓"
 
       - name: Build (DCE)
         run: |
@@ -131,6 +140,19 @@ jobs:
         # the latter compiled at SAKSHI_LEVEL=3 to prove compile-time level
         # elimination). Matches scripts/test.sh.
         run: cyrius test
+
+      - name: Raw include of dist/sakshi.cyr (no auto-prepend)
+        # tests/tcyr/raw_include.tcyr includes ONLY dist/sakshi.cyr. `cyrius test`
+        # above auto-prepends the [deps] stdlib, which supplies the bundle's two
+        # leaves (fnptr, atomic) and so cannot tell a bundle without its requires
+        # block apart. --no-deps builds the file with nothing prepended, which is
+        # what a raw `include "dist/sakshi.cyr"` consumer gets: the 2.5.6 bundle
+        # fails here (3 reachable undefined fns), the 2.5.7 one builds and exits 0.
+        # Matches scripts/test.sh.
+        run: |
+          mkdir -p build
+          cyrius build --no-deps tests/tcyr/raw_include.tcyr build/raw_include
+          ./build/raw_include
 
       - name: Bench
         run: cyrius bench tests/bcyr/sakshi.bcyr

@@ -5,12 +5,27 @@ description = "Sakshi — the silent witness. Tracing, error handling, and struc
 license = "GPL-3.0-only"
 repository = "https://github.com/MacCracken/sakshi"
 language = "cyrius"
-cyrius = "6.6.6"
+cyrius = "6.6.18"
 
 [build]
 entry = "programs/smoke.cyr"
 output = "build/sakshi-smoke"
 defines = ["SAKSHI_SMOKE"]
+
+[lib]
+# The bundled modules, in src/lib.cyr's include order: syscalls (arch-dispatched
+# numbers) -> clock -> format -> output (uses format) -> error -> trace -> span.
+# `cyrius distlib` concatenates them into dist/sakshi.cyr and derives
+# dist/sakshi.deps from what the compile-verify proves the bundle needs.
+modules = [
+    "src/syscalls.cyr",
+    "src/clock.cyr",
+    "src/format.cyr",
+    "src/output.cyr",
+    "src/error.cyr",
+    "src/trace.cyr",
+    "src/span.cyr",
+]
 
 [deps]
 stdlib = ["syscalls", "string", "fmt", "assert", "alloc", "atomic", "fnptr", "bench", "vec"]

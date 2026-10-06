@@ -34,8 +34,7 @@ sakshi/
     output.cyr      — stderr, file, ring, atomic ring, UDP, hook targets
   dist/
     sakshi.cyr      — generated single-file bundle (external consumers)
-  scripts/
-    bundle.sh       — regenerates dist/sakshi.cyr from src/
+    sakshi.deps     — the stdlib leaves the bundle needs (fnptr, atomic)
 ```
 
 ## Usage
@@ -51,6 +50,10 @@ External consumers pulling via `[deps.sakshi]`:
 ```cyrius
 include "lib/sakshi.cyr"   # resolved from the bundle at dist/sakshi.cyr
 ```
+
+A raw include of the bundle also works on its own — `include "dist/sakshi.cyr"`
+compiles with nothing included before it, because the bundle opens with a
+compile-verified requires block (`include "lib/fnptr.cyr"`, `include "lib/atomic.cyr"`).
 
 Then the API is the same:
 
@@ -70,6 +73,28 @@ sakshi_span_enter("boot_init", 9);
 # ... work ...
 sakshi_span_exit();
 ```
+
+## The dist bundle
+
+`dist/sakshi.cyr` is the single-file equivalent of `src/lib.cyr`: the modules
+listed under `[lib] modules` in `cyrius.cyml`, concatenated in `src/lib.cyr`'s
+include order. Internal consumers (Cyrius stdlib, sibling AGNOS crates) should
+prefer `include "src/lib.cyr"` against a sibling checkout; the bundle exists for
+crates that pull sakshi via `[deps.sakshi] modules = [...]`, and it is what cyrius
+folds as `lib/sakshi.cyr`.
+
+Regenerate it with `cyrius distlib`, and check it with `cyrius distlib --check`
+(CI fails on a stale bundle). Never edit it by hand. distlib also writes
+`dist/sakshi.deps`, the stdlib leaves the bundle needs — exactly the set its
+compile-verify proves on every target, and the leaves its requires block includes.
+
+Constraints the bundle carries (the same as `src/lib.cyr`):
+
+- Single-threaded only, EXCEPT the `SK_OUT_ATOMIC_RING` target, which is
+  multi-producer safe.
+- UDP output is unencrypted and unauthenticated.
+- Monotonic timestamps overflow i64 after ~292 years of uptime.
+- Zero heap allocation.
 
 ## Error Format
 

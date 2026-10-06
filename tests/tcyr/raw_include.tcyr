@@ -1,0 +1,26 @@
+# Test: dist/sakshi.cyr compiles when raw-included on its own (2.5.7).
+#
+# The bundle is the ONLY include in this file. Until 2.5.7 scripts/bundle.sh
+# stripped every include, so a raw include left fncall6 (sakshi_set_emit_hook)
+# and atomic_fetch_add / atomic_load / atomic_store (the atomic ring) undefined
+# and the compile failed. cyrius distlib now opens the bundle with a
+# compile-verified requires block (lib/fnptr.cyr, lib/atomic.cyr).
+#
+# Deliberately NOT lib/assert.cyr, unlike the other tests: assert includes
+# lib/alloc.cyr, which includes lib/fnptr.cyr and lib/atomic.cyr, so with it
+# in the unit the 2.5.6 bundle compiles too and this test could not fail.
+# The exit status is the failure count.
+#
+# `cyrius test` auto-prepends the [deps] stdlib, which supplies the same two
+# leaves, so the gate that can fail is CI's no-prepend build of this file:
+#   cyrius build --no-deps tests/tcyr/raw_include.tcyr build/raw_include
+include "dist/sakshi.cyr"
+
+var fails = 0;
+
+sakshi_output_buffer();
+var before = sakshi_ring_event_count();
+if (sakshi_info("raw include ok", 14) != 0) { fails = fails + 1; }
+if (sakshi_ring_event_count() != before + 1) { fails = fails + 1; }
+
+syscall(60, fails);
