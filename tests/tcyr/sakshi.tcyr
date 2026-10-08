@@ -581,8 +581,10 @@ for (var i = 0; i < 1000; i = i + 1) {
 assert_eq(mono_ok, 1, "ticks monotonic over 1000 reads");
 
 # ticks→ns scale agrees with the kernel: nanosleep(10 ms) → ns delta in [8, 12] ms.
-# nanosleep number is a literal 35 (a `var` defeats the macOS/Windows reroute —
-# cyrius issue 2026-06-16); nap is [16] (a {tv_sec,tv_nsec} timespec is 16 bytes,
+# nanosleep number is a literal 35: it must fold at compile time, as a literal or
+# a const does (a `var` defeats the macOS/Windows reroute — cyrius issue
+# 2026-06-16), and src/syscalls.cyr's const _SK_SYS_NANOSLEEP exists on x86 only,
+# while 35 is renumbered on aarch64 too; nap is [16] (a {tv_sec,tv_nsec} timespec is 16 bytes,
 # and var[N] is byte-sized in cyrius — [2] reserved only 8 B and ran the +8 store OOB).
 var ns0 = _sk_ticks_to_ns(_sk_now_ticks());
 var nap[16];

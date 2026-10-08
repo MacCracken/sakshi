@@ -440,9 +440,14 @@ fn sakshi_aring_clear(): i64 {
 # Uses sendto syscall (44 on x86_64) with AF_INET (2) + SOCK_DGRAM (2)
 #
 # NOT SUPPORTED ON WINDOWS (PE). `socket` (41) and `sendto` (44) are not in
-# the Win64 PE syscall reroute whitelist, so SK_OUT_UDP emits nothing on a
-# PE target. Windows consumers must use the stderr or file target (both
-# routed). Tracked in issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md.
+# the Win64 PE syscall reroute whitelist, so SK_OUT_UDP cannot emit on a PE
+# target. Windows consumers must use the stderr or file target (both routed).
+# Until 2.5.8 the numbers were `var` slots and the refusal came from cyrius's
+# run-time PE dispatch (socket returned -38). Now that they are consts the
+# compiler sees an unrouted literal and warns at both call sites, so the PE
+# build refuses up front below (-1), as AGNOS and macOS do, and the two calls
+# are not compiled for PE at all.
+# Tracked in issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md.
 #
 # NOT SUPPORTED ON macOS either (2.5.0). The Mach-O ESYSXLAT table translates
 # `socket` (41 -> BSD 97) but has NO entry for `sendto` (neither the x86 44 nor
@@ -472,8 +477,13 @@ fn sakshi_output_udp(ip, port): i64 {
     # rather than hand back a usable-looking fd for a transport that cannot send.
     return 0 - 1;
     #endif
+    #ifdef CYRIUS_TARGET_WIN
+    # Windows PE: neither socket nor sendto is routed (see the note above).
+    return 0 - 1;
+    #endif
     #ifndef CYRIUS_TARGET_AGNOS
     #ifndef CYRIUS_TARGET_MACOS
+    #ifndef CYRIUS_TARGET_WIN
     # socket(AF_INET=2, SOCK_DGRAM=2, 0)
     var fd = syscall(_SK_SYS_SOCKET, 2, 2, 0);
     if (fd < 0) { return fd; }
@@ -490,6 +500,7 @@ fn sakshi_output_udp(ip, port): i64 {
 
     _sk_output_target = SK_OUT_UDP;
     return fd;
+    #endif
     #endif
     #endif
 }
@@ -527,7 +538,9 @@ fn _sk_write_udp_event(ts, level, category, msg, msg_len): i64 {
     var total = 12 + pkt_msg_len;
     #ifndef CYRIUS_TARGET_AGNOS
     #ifndef CYRIUS_TARGET_MACOS
+    #ifndef CYRIUS_TARGET_WIN
     syscall(_SK_SYS_SENDTO, _sk_udp_fd, &pkt, total, 0, &_sk_udp_addr, 16);
+    #endif
     #endif
     #endif
     return 0;

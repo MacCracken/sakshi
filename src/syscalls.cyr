@@ -3,8 +3,7 @@
 # Sakshi cannot pull `lib/syscalls.cyr` from the cyrius stdlib because the
 # foundation-layer rule forbids external deps and that file's enum surface
 # (~60+ values per arch) is too large to inline through the bundle. Instead
-# we define just the syscalls sakshi actually uses, as plain `var` slots so
-# the project memory note about enum-heavy includes (bug #16) doesn't apply.
+# we define just the syscalls sakshi actually uses.
 #
 # Numbers: x86_64 from `arch/x86/entry/syscalls/syscall_64.tbl`;
 # aarch64 from `include/uapi/asm-generic/unistd.h`.
@@ -12,11 +11,21 @@
 # v2.2.2 — closes the cross-build syscall-arity warnings reported on
 # `cyrius build --aarch64`. Pre-v2.2.2 the numbers were inlined as bare
 # integers, so the aarch64 binary called the wrong syscall (silent UB).
-
-# clock_gettime / nanosleep are NOT defined here: their reroute-required numbers
-# (228 / 35) must be LITERALS at the call site (clock.cyr) — a `var`/named constant
-# does not const-fold, so the macOS/Windows reroute silently fails (cyrius issue
-# 2026-06-16-var-syscall-number-defeats-macho-pe-reroute).
+#
+# They are `const` since 2.5.8 (cyrius 6.7.2+). A const has no storage: every
+# use folds to its value exactly as a literal does, so `syscall(_SK_SYS_X, ..)`
+# compiles to the same code as `syscall(N, ..)` on every target. That matters
+# because cyrius's macOS `__got` libcall reroutes and its Windows IAT reroutes
+# match the syscall NUMBER at compile time. Until 2.5.8 these were `var`
+# slots, which do not fold, so those reroutes never saw them (cyrius issue
+# 2026-06-16-var-syscall-number-defeats-macho-pe-reroute). The var slots kept
+# working only through the run-time paths: the ESYSXLAT renumbering on aarch64
+# and on both macOS backends, and on Windows the run-time dispatch cyrius
+# 6.1.16 added for a non-literal number. clock_gettime / nanosleep / QPC need the compile-time
+# reroutes, so clock.cyr spelled them as bare literals; they are named below
+# now. ⚠ Keep every syscall number a `const` (or a literal): turning one back
+# into a `var` silently loses the compile-time reroute again.
+#
 # AGNOS (ring-3) is x86_64 but NOT Linux: its syscall numbers and `open` ABI
 # differ, and `CYRIUS_ARCH_X86` is predefined on every x86 build (agnos
 # included), so the agnos branch must come FIRST and the Linux branches must be
@@ -25,32 +34,54 @@
 # agnos has no BSD sockets (socket/sendto), so UDP transport is unavailable here
 # (output.cyr returns -1 → caller keeps stderr).
 #ifdef CYRIUS_TARGET_AGNOS
-var _SK_SYS_WRITE         = 1;
-var _SK_SYS_OPEN          = 7;
-var _SK_SYS_CLOSE         = 6;
-var _SK_SYS_EXIT          = 0;
+const _SK_SYS_WRITE         = 1;
+const _SK_SYS_OPEN          = 7;
+const _SK_SYS_CLOSE         = 6;
+const _SK_SYS_EXIT          = 0;
+# The reference clock (clock.cyr _sk_clock_now_ns_raw): uptime_us first,
+# uptime_ms only when it answers -1. agnos has no reroute for either. ⚠ 95 is
+# Linux `umask`, so these must stay inside the CYRIUS_TARGET_AGNOS guard.
+const _SK_SYS_UPTIME_US     = 95;
+const _SK_SYS_UPTIME_MS     = 40;
 #endif
 
 #ifndef CYRIUS_TARGET_AGNOS
 #ifdef CYRIUS_ARCH_X86
-var _SK_SYS_WRITE         = 1;
-var _SK_SYS_OPEN          = 2;
-var _SK_SYS_CLOSE         = 3;
-var _SK_SYS_SOCKET        = 41;
-var _SK_SYS_SENDTO        = 44;
-var _SK_SYS_EXIT          = 60;
+const _SK_SYS_WRITE         = 1;
+const _SK_SYS_OPEN          = 2;
+const _SK_SYS_CLOSE         = 3;
+const _SK_SYS_SOCKET        = 41;
+const _SK_SYS_SENDTO        = 44;
+const _SK_SYS_EXIT          = 60;
+# nanosleep: the calibration window in clock.cyr _sk_clock_init (x86 only).
+# Routed to Sleep on Windows and to poll on x86 macOS.
+const _SK_SYS_NANOSLEEP     = 35;
 #endif
 
 #ifdef CYRIUS_ARCH_AARCH64
 # aarch64 has no `open` — use `openat(AT_FDCWD, path, flags, mode)`.
-var _SK_SYS_OPENAT        = 56;
-var _SK_SYS_CLOSE         = 57;
-var _SK_SYS_WRITE         = 64;
-var _SK_SYS_EXIT          = 93;
-var _SK_SYS_SOCKET        = 198;
-var _SK_SYS_SENDTO        = 206;
-var _SK_AT_FDCWD          = 0 - 100;
+const _SK_SYS_OPENAT        = 56;
+const _SK_SYS_CLOSE         = 57;
+const _SK_SYS_WRITE         = 64;
+const _SK_SYS_EXIT          = 93;
+const _SK_SYS_SOCKET        = 198;
+const _SK_SYS_SENDTO        = 206;
+const _SK_AT_FDCWD          = 0 - 100;
 #endif
+
+# clock_gettime: the reference clock in clock.cyr _sk_clock_now_ns_raw, on every
+# target but AGNOS. ⚠ The x86_64 number on EVERY arch, aarch64 included:
+# cyrius's aarch64 ESYSXLAT translates 228 → 113 (the native number), macOS
+# reroutes it to _clock_gettime_nsec_np on both Darwin backends, and Windows to
+# GetTickCount64 (the fallback when QueryPerformanceFrequency fails).
+const _SK_SYS_CLOCK_GETTIME = 228;
+#endif
+
+#ifdef CYRIUS_TARGET_WIN
+# kernel32 QueryPerformanceCounter / QueryPerformanceFrequency, routed since
+# cyrius 6.6.5. Each writes a 64-bit count at its argument and returns a BOOL.
+const _SK_SYS_QPC           = 0xF038;
+const _SK_SYS_QPF           = 0xF039;
 #endif
 
 # open(path, flags, mode) — arity-stable wrapper. x86_64 Linux calls `open`;

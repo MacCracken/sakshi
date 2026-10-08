@@ -1,0 +1,65 @@
+# Test: sakshi's syscall numbers are compile-time constants (2.5.8).
+#
+# Every number src/syscalls.cyr names must FOLD, as a literal does: cyrius's
+# Windows IAT reroutes and macOS __got reroutes match the syscall number at
+# compile time, and a `var` slot does not fold, so the reroute never fires for
+# it (cyrius issue 2026-06-16-var-syscall-number-defeats-macho-pe-reroute).
+# `#assert` takes only a const expression and refuses a variable by name, so
+# each line below stops compiling if its name is turned back into a `var` —
+# which is what 2.5.7 and earlier had for the first sixteen, and why clock.cyr
+# spelled clock_gettime / nanosleep / QPC as bare literals until 2.5.8.
+#
+# `cyrius test` compiles this for x86_64 Linux. The other blocks are checked
+# when the file is built for that target (`cyrius build --aarch64 | --win |
+# --agnos tests/tcyr/syscall_consts.tcyr`).
+
+include "lib/string.cyr"
+include "lib/fmt.cyr"
+include "lib/assert.cyr"
+include "lib/fnptr.cyr"
+
+include "src/lib.cyr"
+
+#ifdef CYRIUS_TARGET_AGNOS
+#assert _SK_SYS_WRITE == 1, "agnos write"
+#assert _SK_SYS_OPEN == 7, "agnos open"
+#assert _SK_SYS_CLOSE == 6, "agnos close"
+#assert _SK_SYS_EXIT == 0, "agnos exit"
+#assert _SK_SYS_UPTIME_US == 95, "agnos uptime_us"
+#assert _SK_SYS_UPTIME_MS == 40, "agnos uptime_ms"
+#endif
+
+#ifndef CYRIUS_TARGET_AGNOS
+#ifdef CYRIUS_ARCH_X86
+#assert _SK_SYS_WRITE == 1, "x86_64 write"
+#assert _SK_SYS_OPEN == 2, "x86_64 open"
+#assert _SK_SYS_CLOSE == 3, "x86_64 close"
+#assert _SK_SYS_SOCKET == 41, "x86_64 socket"
+#assert _SK_SYS_SENDTO == 44, "x86_64 sendto"
+#assert _SK_SYS_EXIT == 60, "x86_64 exit"
+#assert _SK_SYS_NANOSLEEP == 35, "x86_64 nanosleep"
+#endif
+#ifdef CYRIUS_ARCH_AARCH64
+#assert _SK_SYS_OPENAT == 56, "aarch64 openat"
+#assert _SK_SYS_CLOSE == 57, "aarch64 close"
+#assert _SK_SYS_WRITE == 64, "aarch64 write"
+#assert _SK_SYS_EXIT == 93, "aarch64 exit"
+#assert _SK_SYS_SOCKET == 198, "aarch64 socket"
+#assert _SK_SYS_SENDTO == 206, "aarch64 sendto"
+#assert _SK_AT_FDCWD == 0 - 100, "aarch64 AT_FDCWD"
+#endif
+# The x86_64 number on every arch: aarch64 renumbers it at run time.
+#assert _SK_SYS_CLOCK_GETTIME == 228, "clock_gettime"
+#endif
+
+#ifdef CYRIUS_TARGET_WIN
+#assert _SK_SYS_QPC == 0xF038, "QueryPerformanceCounter"
+#assert _SK_SYS_QPF == 0xF039, "QueryPerformanceFrequency"
+#endif
+
+test_group("syscall numbers are consts");
+# The #asserts above are the test; reaching here means every one compiled.
+# One run-time row through the folded numbers: the reference clock reads.
+assert(_sk_clock_now_ns_raw() > 0, "the reference clock reads through _SK_SYS_CLOCK_GETTIME");
+
+var r = assert_summary();
