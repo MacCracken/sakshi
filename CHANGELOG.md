@@ -5,6 +5,89 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.8] - 2026-10-08
+
+Toolchain release for the cyrius 6.7.5 fold wave (W2). sakshi's syscall numbers
+become `const`, which the new pin allows. No public API changes. On Windows,
+`sakshi_output_udp` now returns -1 instead of -38. It still refuses, as before.
+
+### Changed — cyrius pin 6.6.18 → 6.7.5; `cyrius.lock` committed
+
+- `[package].cyrius` is now `6.7.5`. The full suite, the DCE smoke on x86_64,
+  aarch64 (qemu) and PE (wine), lint, fmt, doc coverage and the bench all pass
+  on it. Since `const` needs cyrius 6.7.2, the bundle now needs 6.7.2 or later.
+- **`cyrius.lock` is committed**, as in the other folds. It was untracked
+  before. A fresh `rm -rf lib && cyrius deps` writes the same 20 rows on every
+  run. CI's build job runs `cyrius deps --verify` and fails on an uncommitted or
+  rewritten lock. `cyrius deps` itself already exits 1 on a hash mismatch.
+
+### Changed — the syscall numbers are `const`
+
+- **The 16 `_SK_SYS_*` and `_SK_AT_FDCWD` in `src/syscalls.cyr` are `const`.**
+  Before, they were `var` slots. A const has no storage: each use folds to its
+  value, exactly as a literal does. Two cyrius reroutes match the syscall
+  number at compile time: the Windows IAT reroutes and the macOS `__got`
+  reroutes. Until now they never saw sakshi's var numbers. A var number reached
+  Windows only through cyrius's run-time PE dispatch, and reached aarch64 and
+  macOS through the run-time ESYSXLAT renumbering. Smoke sizes:
+
+  | Target | 2.5.7 | 2.5.8 |
+  |---|---|---|
+  | PE | 199,680 B | 192,000 B |
+  | x86_64 | 167,568 B | 167,520 B |
+  | aarch64 | 204,272 B | 204,216 B |
+  | agnos | 180,064 B | 180,032 B |
+  | Mach-O | unchanged (padded) | unchanged (padded) |
+
+  The PE figure also includes the UDP change below.
+- **`clock.cyr`'s bare syscall literals are named** in `src/syscalls.cyr`, each
+  under its target's guard:
+
+  | Name | Number | Target |
+  |---|---|---|
+  | `_SK_SYS_CLOCK_GETTIME` | 228 | every target but agnos |
+  | `_SK_SYS_NANOSLEEP` | 35 | x86 |
+  | `_SK_SYS_UPTIME_US` | 95 | agnos |
+  | `_SK_SYS_UPTIME_MS` | 40 | agnos |
+  | `_SK_SYS_QPC` | `0xF038` | Windows |
+  | `_SK_SYS_QPF` | `0xF039` | Windows |
+
+  They had to be literals while a named number meant a `var`. The comments that
+  said "MUST be a literal" now say the number must fold: a literal or a const.
+- **New test: `tests/tcyr/syscall_consts.tcyr`.** It `#assert`s every number,
+  per target. `#assert` takes only a const expression, so turning any of these
+  back into a `var` stops the test compiling. Against the 2.5.7 sources it
+  fails with *"'_SK_SYS_WRITE' is a variable - a const context takes only
+  constants"*. It builds and runs for x86_64, aarch64 (qemu) and PE (wine), and
+  builds for agnos. The 2.5.8 smoke also runs on real arm64 macOS and Intel
+  macOS.
+
+### Changed — `sakshi_output_udp` refuses on Windows at compile time
+
+- PE has no reroute for `socket` (41) or `sendto` (44). That is unchanged.
+- With const numbers the compiler sees two unrouted literals, and it warned at
+  both call sites. So the PE build now refuses up front, as AGNOS and macOS do:
+  it returns -1, and neither call is compiled for PE.
+- The 2.5.7 PE build refused at run time instead. Under wine it returned -38
+  (-ENOSYS) from cyrius's dispatch, where 2.5.8 returns -1. Both are negative,
+  and in both cases the output target stays where it was.
+
+### Changed — CI
+
+- **`build-windows` builds with `CYRIUS_DCE=1` again**, the same configuration
+  as the other two lanes. 2.4.13 dropped it because DCE-on PEs faulted before
+  `main`, which cyrius 6.6.1 fixed. On 6.7.5 the DCE-on smoke runs clean under
+  wine.
+- The Windows lane also fails on any `warning:src/` in the PE build. This was
+  checked: with the 2.5.7 `output.cyr` over const numbers it fires, at
+  `output.cyr:478` and `:530`.
+- **`-D SAKSHI_SMOKE` is gone** from all three lanes and from `release.yml`.
+  `cyrius.cyml`'s `[build] defines` supplies it (read since cyrius 6.6.17). An
+  explicit `-D` replaces that list.
+- Without the define, the smoke never calls `main()` and exits 0 having printed
+  nothing. So the x86_64 smoke step and `release.yml` now assert the
+  "sakshi smoke ok" line, as the aarch64 and PE steps already did.
+
 ## [2.5.7] - 2026-10-06
 
 Toolchain and packaging release for the cyrius 6.6.18 fold wave. No code or
