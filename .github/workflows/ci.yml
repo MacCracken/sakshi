@@ -143,12 +143,19 @@ jobs:
           echo "dist/sakshi.cyr + dist/sakshi.deps match src/ ✓"
 
       - name: Build (DCE)
+        # SAKSHI_SMOKE comes from cyrius.cyml `[build] defines` (read since
+        # cyrius 6.6.17); an explicit -D would replace that list.
         run: |
           mkdir -p build
-          CYRIUS_DCE=1 cyrius build -D SAKSHI_SMOKE programs/smoke.cyr build/sakshi-smoke
+          CYRIUS_DCE=1 cyrius build programs/smoke.cyr build/sakshi-smoke
 
       - name: Smoke
-        run: ./build/sakshi-smoke
+        # Assert the line, as the aarch64 and PE lanes do: without SAKSHI_SMOKE
+        # the smoke never calls main() and exits 0 having printed nothing.
+        run: |
+          out=$(./build/sakshi-smoke 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "sakshi smoke ok" || { echo "::error::smoke emitted no 'sakshi smoke ok' line"; exit 1; }
 
       - name: Test
         # Auto-discover every tests/tcyr/*.tcyr (sakshi.tcyr + level_gate.tcyr,
@@ -213,7 +220,7 @@ jobs:
       - name: Cross-build smoke (--aarch64, DCE)
         run: |
           mkdir -p build
-          CYRIUS_DCE=1 cyrius build --aarch64 -D SAKSHI_SMOKE programs/smoke.cyr build/sakshi-smoke-aarch64
+          CYRIUS_DCE=1 cyrius build --aarch64 programs/smoke.cyr build/sakshi-smoke-aarch64
 
       - name: Verify aarch64 ELF
         run: |
@@ -239,12 +246,12 @@ jobs:
 
   build-windows:
     name: Cross-build + run (Windows PE)
-    # PE build+RUN gate. Unlike the aarch64 lane (compile-only, runtime held
-    # for qemu), this one actually executes the binary under wine and asserts
-    # a known log line reaches stderr — the gate that would have caught the
+    # PE build+RUN gate. Like the aarch64 lane (qemu), this one executes the
+    # binary — under wine — and asserts a known log line reaches stderr — the
+    # gate that would have caught the
     # v2.2.6 silent-drop regression (var-slot syscall numbers defeat the PE
     # reroute) at commit time instead of in a downstream consumer.
-    # See docs/development/issues/2026-06-09-windows-pe-var-syscall-no-reroute.md.
+    # See docs/development/issues/archive/2026-06-09-windows-pe-var-syscall-no-reroute.md.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -283,20 +290,24 @@ jobs:
       - name: Resolve dependencies
         run: cyrius deps
 
-      - name: Cross-build smoke (--win)
+      - name: Cross-build smoke (--win, DCE)
         run: |
-          # NO CYRIUS_DCE=1 here — deliberate, see 2.4.13.
-          # On the cycc_win backend DCE does not shrink the image (155648 bytes
-          # either way) but rewrites 74386 of them, and the result faults on an
-          # execute of address 0 before reaching main. Built without it, the
-          # same PE runs clean and prints the smoke line. Reproduced identically
-          # on 6.5.36 and 6.6.0 (the DCE-on PEs are byte-identical across both),
-          # so this is a long-standing cross-backend codegen bug, not a
-          # regression from the 6.6.0 bump — it is the already-reported cyrius
-          # cross-target DCE gap. Restore the flag once that lands.
-          # x86_64 is unaffected: DCE there shrinks 145992 -> 96840 and runs.
+          # CYRIUS_DCE=1 restored in 2.5.8, so this lane builds the same
+          # configuration as the other two. 2.4.13 dropped it because DCE-on PEs
+          # faulted at address 0 before main; cyrius 6.6.1 fixed that. On PE,
+          # DCE NOP-fills unreachable fns but does not compact the image.
+          # Then: no warning from sakshi's own sources. The two calls PE cannot
+          # route (socket, sendto) are compiled out for PE since 2.5.8; an
+          # unrouted call reappearing under src/ fails here. (The stdlib's own
+          # warnings, lib/..., are not sakshi's to gate.)
+          set -o pipefail
           mkdir -p build
-          cyrius build --win -D SAKSHI_SMOKE programs/smoke.cyr build/sakshi-smoke.exe
+          CYRIUS_DCE=1 cyrius build --win programs/smoke.cyr build/sakshi-smoke.exe 2>&1 | tee build/win.log
+          if grep -q 'warning:src/' build/win.log; then
+            echo "::error::the PE build warns on sakshi's own sources"
+            grep 'warning:src/' build/win.log
+            exit 1
+          fi
 
       - name: Verify PE32+ executable
         run: |

@@ -59,8 +59,10 @@ jobs:
         run: |
           cyrius deps
           mkdir -p build
-          CYRIUS_DCE=1 cyrius build -D SAKSHI_SMOKE programs/smoke.cyr build/sakshi-smoke
-          ./build/sakshi-smoke
+          CYRIUS_DCE=1 cyrius build programs/smoke.cyr build/sakshi-smoke
+          out=$(./build/sakshi-smoke 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "sakshi smoke ok"
 
       - name: Extract changelog
         run: |
