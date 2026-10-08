@@ -38,6 +38,21 @@ jobs:
       - name: Resolve dependencies
         run: cyrius deps
 
+      - name: cyrius.lock is committed and current
+        # cyrius.lock is committed since 2.5.8. `cyrius deps` above already
+        # exits 1 when a vendored leaf's hash differs from the lock (a pin move
+        # without `cyrius deps --relock`); `--verify` re-checks every row, and
+        # the porcelain test catches a lock that was never committed (deps
+        # writes a fresh one and exits 0) or one it rewrote.
+        run: |
+          cyrius deps --verify
+          if [ -n "$(git status --porcelain -- cyrius.lock)" ]; then
+            echo "ERROR: cyrius.lock is missing or stale. Run 'cyrius deps' and commit it."
+            git status --porcelain -- cyrius.lock
+            exit 1
+          fi
+          echo "cyrius.lock covers lib/ ✓"
+
       - name: Lint
         # Auto-discover every source/test/dist file so new modules + tests are
         # covered without editing CI (the old hardcoded list missed tests/ and
