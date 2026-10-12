@@ -1,6 +1,6 @@
 # Sakshi Development Roadmap
 
-> **Current: v2.5.8** (pin: cyrius 6.7.5 — current; the bundle uses `const`, so it needs cyrius ≥ 6.7.2). ⚠ Until 2.4.10 this repo was pinned to 6.5.0 with a developer `lib/` symlink into **6.4.49**, so it was tested and benchmarked against a language two minors behind the one it is folded into. For a stdlib repo that makes the results describe the wrong compiler; bump the pin as part of any change here, never as a follow-up. Linux x86_64 / aarch64 / AGNOS / macOS and **Windows PE** all build from one portable source — as of v2.2.10 the hot timestamp path (`_sk_now_ns`) has no `#ifdef CYRIUS_TARGET_WIN` branch — PE shares the calibrated-rdtsc path; the only Windows branch left in `src/clock.cyr` is the reference clock in `_sk_clock_now_ns_raw`, which calibrates and anchors the TSC (QueryPerformanceCounter since v2.5.4, `GetTickCount64` only as its fallback). The `build-windows` (wine) and `build-aarch64` (qemu) CI lanes both run the smoke and assert output reaches stderr. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.3.0 adds the lock-free multi-producer `SK_OUT_ATOMIC_RING` target. v2.2.0 public API is stable.
+> **Current: v2.5.9** (pin: cyrius 6.7.9 — current; the bundle uses `const`, so it needs cyrius ≥ 6.7.2). ⚠ Until 2.4.10 this repo was pinned to 6.5.0 with a developer `lib/` symlink into **6.4.49**, so it was tested and benchmarked against a language two minors behind the one it is folded into. For a stdlib repo that makes the results describe the wrong compiler; bump the pin as part of any change here, never as a follow-up. Linux x86_64 / aarch64 / AGNOS / macOS, **Windows PE** and (since 2.5.9) the **cx** bytecode target all build from one portable source — as of v2.2.10 the hot timestamp path (`_sk_now_ns`) has no `#ifdef CYRIUS_TARGET_WIN` branch — PE shares the calibrated-rdtsc path; the only Windows branch left in `src/clock.cyr` is the reference clock in `_sk_clock_now_ns_raw`, which calibrates and anchors the TSC (QueryPerformanceCounter since v2.5.4, `GetTickCount64` only as its fallback). The `build-windows` (wine), `build-aarch64` (qemu) and `build-cx` (cxvm, 2.5.9) CI lanes all run the smoke and assert output reaches stderr; `build-cx` also runs the full suite on cxvm. Compile-time log-level elimination (`#define SAKSHI_LEVEL <0..5>`) shipped. v2.3.0 adds the lock-free multi-producer `SK_OUT_ATOMIC_RING` target. v2.2.0 public API is stable.
 >
 > Shipped history lives in [`CHANGELOG.md`](../../CHANGELOG.md). This file tracks only what's ahead.
 
@@ -92,6 +92,11 @@ install step already runs before the "Run under qemu" step), restoring
 redundant `-D SAKSHI_SMOKE` (dropped; the CI keeps its `CYRIUS_DCE=1` prefix
 rather than `[build] dce = true`, which would also apply to `cyrius test`).
 
+- **`build-cx` builds `cycc_cx` itself when the install has none.** cyrius
+  6.7.9's x86_64-linux release tarball ships `cxvm` but not `cycc_cx` (a source
+  install builds both), so the lane fetches the pinned tag's source and builds
+  it with the installed `cycc` (2.5.9). Once a cyrius release tarball ships
+  `cycc_cx`, the lane takes the install's and the fallback can go.
 - **CI installs cyrius from `install.sh` on `main`, not from the pinned tag.**
   Every lane fetches `raw.githubusercontent.com/MacCracken/cyrius/main/scripts/install.sh`
   and passes the pin as `CYRIUS_VERSION`. So the toolchain is the pinned one,

@@ -5,6 +5,94 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.9] - 2026-10-11
+
+Fix release: sakshi compiles and runs on cyrius's cx target (cyrius-x bytecode,
+run by cxvm). Until now no program that included sakshi compiled for cx. No
+public API change. Nothing changes on the native targets: their binaries are
+byte-identical to 2.5.8's.
+
+### Fixed — sakshi had no cx arm (cyrius issue 2026-10-11-sakshi-fold-has-no-cx-arm)
+
+- **The bug.** The cx driver predefines `CYRIUS_TARGET_CX` and no
+  `CYRIUS_ARCH_*`. sakshi's syscall numbers sat under `CYRIUS_TARGET_AGNOS`,
+  `CYRIUS_ARCH_X86` and `CYRIUS_ARCH_AARCH64`, so on cx only
+  `_SK_SYS_CLOCK_GETTIME` was defined. A two-line program that included
+  `lib/sakshi.cyr` stopped with 10 "undefined variable" errors
+  (`_SK_SYS_WRITE` x3, `_SK_SYS_CLOSE` x4, `_SK_SYS_EXIT`, `_SK_SYS_SOCKET`,
+  `_SK_SYS_SENDTO`). That holds for the sakshi vendored in every cyrius from
+  6.6.0 to 6.7.9, and for every fold that requires sakshi.
+- **`src/syscalls.cyr` gains a `CYRIUS_TARGET_CX` arm** with the numbers the
+  cxvm guest contract serves, x86_64-Linux numbered: `write` 1, `open` 2,
+  `close` 3, `exit` 60. `clock_gettime` (228) was already defined on every
+  target but AGNOS; cxvm serves it from the host's clock. `socket`, `sendto`
+  and `nanosleep` are not defined for cx: cxvm passes those to the host raw,
+  without translating their pointers.
+- **`_sk_open` had no body on cx.** Its arms were AGNOS, x86 and aarch64, so on
+  cx it returned no defined value, and `sakshi_output_file` would have taken
+  that as its fd. It now calls `open`, which cxvm translates. Verified on
+  cxvm: a file target receives the log line and the span's two lines.
+- **`sakshi_output_udp` refuses on cx**, as on Windows, AGNOS and macOS. It
+  returns -1 and the current target is kept. `sendto` would hand the host a
+  guest offset for both the packet and the sockaddr. Neither `socket` nor
+  `sendto` is compiled for cx.
+- **The clock on cx.** The guest has no cycle counter and no nanosleep it can
+  issue, so calibration installs nothing, and every timestamp reads the
+  reference clock: `clock_gettime`, served by cxvm from the host's monotonic
+  clock. This is the existing calibration-failure fallback, and
+  `sakshi_clock_recalibrate` returns 0 on cx. The `cpuid` / `rdtsc` asm was
+  already under `CYRIUS_ARCH_X86`. `src/clock.cyr` changes in comments only.
+- Every other target guard in `src/` was checked. The only `CYRIUS_ARCH_*`
+  code left is the counter asm in `src/clock.cyr`, which cx reaches only as
+  the zero-counter path above.
+- **Verified on cxvm** with cyrius 6.7.9's `cycc_cx` and `cxvm`: the issue's
+  repro compiles and exits 0. The smoke prints its `[INFO]`, `[ENTER]` and
+  `[EXIT]` lines to stderr and exits 0. `sakshi.tcyr` passes 149 of 149 there,
+  and `syscall_consts.tcyr` 1 of 1.
+
+### Unchanged on every native target
+
+- Built with cyrius 6.7.9, the smoke, `syscall_consts.tcyr`, `level_gate.tcyr`
+  and `raw_include.tcyr` are byte-identical to 2.5.8's on x86_64, aarch64,
+  Windows PE, AGNOS, x86_64 Mach-O and arm64 Mach-O, with `CYRIUS_DCE` on and
+  off: 48 binaries. 2.5.8's `sakshi.tcyr` built over the 2.5.9 sources is
+  byte-identical on all six targets too (DCE on). The 2.5.9 `sakshi.tcyr` differs only
+  because `anc_tol` moved (below).
+- The full suite passes 161 of 161 on x86_64, under qemu-aarch64 and under
+  wine. Smoke sizes on 6.7.9 (DCE): x86_64 97,904 B, aarch64 204,216 B,
+  PE 191,488 B, agnos 94,032 B.
+- Bench (x86_64, 6.7.9): `timestamp` 22 ns, `trace_info` 638 ns,
+  `span_cycle` 1.23 us. The native code is unchanged, so these move only with
+  the compiler.
+
+### Changed — cyrius pin 6.7.5 → 6.7.9
+
+- `[package].cyrius` is now `6.7.9`. `cyrius.lock` is regenerated: 20 rows,
+  the same on two fresh `rm -rf lib && cyrius deps` runs, and
+  `cyrius deps --verify` passes. `cyrius distlib` writes the same two sidecar
+  leaves (`fnptr`, `atomic`).
+
+### Tests and CI
+
+- `tests/tcyr/syscall_consts.tcyr` gains a cx block: an `#assert` for each of
+  the four cx numbers.
+- `tests/tcyr/sakshi.tcyr` fences its three cycle-counter groups off cx
+  (`#ifndef CYRIUS_TARGET_CX`) and adds two cx-only groups: the clock reads
+  the reference clock (8 rows) and UDP refuses (3 rows). `anc_tol` moved above
+  the fence, because the calibration-failure group uses it on every target.
+  Natively it still runs 161 rows.
+- **New CI lane, `build-cx`.** It builds with `cycc_cx` and runs on `cxvm`:
+  the smoke (asserting its three stderr lines), the issue's repro over
+  `dist/sakshi.cyr`, `syscall_consts.tcyr`, and `sakshi.tcyr` with a 149-row
+  floor. cyrius 6.7.9's x86_64-linux release tarball ships `cxvm` but not
+  `cycc_cx`. When the install has none, the lane builds it from the pinned
+  tag's source with the installed `cycc`; for 6.7.9 that is byte-identical to
+  the `cycc_cx` a source install lays out.
+- Mutation-checked in a scratch copy. Dropping the cx UDP refusal fails the
+  cx build by name (`_SK_SYS_SOCKET`). A wrong cx `open` number fails the
+  `#assert` in `syscall_consts.tcyr`. Dropping `_sk_open`'s cx arm fails the
+  `open /dev/null` row of `sakshi.tcyr` on cxvm.
+
 ## [2.5.8] - 2026-10-08
 
 Toolchain release for the cyrius 6.7.5 fold wave (W2). sakshi's syscall numbers

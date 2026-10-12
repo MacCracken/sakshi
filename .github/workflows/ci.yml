@@ -345,6 +345,108 @@ jobs:
           }
           echo "PE stderr logging reaches output ✓"
 
+  build-cx:
+    name: Cross-build + run (cx bytecode, cxvm)
+    # cx build+RUN gate (2.5.9), the cx analog of the qemu and wine lanes: the
+    # smoke, the cyrius issue's repro over dist/sakshi.cyr, syscall_consts.tcyr
+    # and the whole sakshi.tcyr suite are built with cycc_cx and run on cxvm.
+    # Until 2.5.9 nothing built sakshi for cx, and it did not compile there: the
+    # cx driver predefines CYRIUS_TARGET_CX and no CYRIUS_ARCH_*, and every
+    # syscall number but clock_gettime sat under an arch guard (cyrius issue
+    # 2026-10-11-sakshi-fold-has-no-cx-arm).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Cyrius toolchain
+        run: |
+          set -e
+          # Pin-driven install via the upstream script (CLAUDE.md § Scaffolding).
+          # Mirrors the other lanes.
+          CYRIUS_VERSION="$(grep '^cyrius = ' cyrius.cyml | head -1 | sed 's/cyrius = "\(.*\)"/\1/')"
+          echo "Installing Cyrius $CYRIUS_VERSION"
+          curl -sSf https://raw.githubusercontent.com/MacCracken/cyrius/main/scripts/install.sh | \
+            CYRIUS_VERSION="$CYRIUS_VERSION" sh
+          echo "$HOME/.cyrius/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve dependencies
+        run: cyrius deps
+
+      - name: cx compiler (cycc_cx) and VM (cxvm)
+        # cxvm ships in every install. cycc_cx is built by a source install but is
+        # not in the x86_64-linux release tarball (cyrius 6.7.9 ships cxvm only).
+        # When the install has none, build it from the pinned tag's own source
+        # with the installed cycc, as cyrius's install.sh does; for 6.7.9 that is
+        # byte-identical to the cycc_cx a source install lays out. `cyrius build
+        # --target=cx` looks in the install's bin/, then in ./build/.
+        run: |
+          set -eo pipefail
+          command -v cxvm >/dev/null || { echo "::error::cxvm missing from the Cyrius install"; exit 1; }
+          if [ -x "$HOME/.cyrius/bin/cycc_cx" ]; then
+            echo "cycc_cx: from the install"
+          else
+            CYRIUS_VERSION="$(grep '^cyrius = ' cyrius.cyml | head -1 | sed 's/cyrius = "\(.*\)"/\1/')"
+            echo "cycc_cx: not in the install; building it from cyrius $CYRIUS_VERSION's source"
+            src=$(mktemp -d)
+            curl -sSfL "https://codeload.github.com/MacCracken/cyrius/tar.gz/refs/tags/$CYRIUS_VERSION" | \
+              tar -xz -C "$src" --strip-components=1
+            (cd "$src" && cycc < src/main_cx.cyr > cycc_cx)
+            mkdir -p build
+            cp "$src/cycc_cx" build/cycc_cx
+            chmod +x build/cycc_cx
+            rm -rf "$src"
+            [ -s build/cycc_cx ] || { echo "::error::could not build cycc_cx"; exit 1; }
+          fi
+
+      - name: Smoke on cxvm — assert the log and the span reach stderr
+        run: |
+          set -e
+          mkdir -p build
+          # The cx build reads no manifest, so the smoke's [build] define and the
+          # stdlib it gets prepended natively are spelled out here.
+          printf '#define SAKSHI_SMOKE\ninclude "lib/syscalls.cyr"\ninclude "programs/smoke.cyr"\n' > build/smoke_cx.cyr
+          cyrius build --target=cx build/smoke_cx.cyr build/sakshi-smoke.cyx
+          rc=0; out=$(cxvm < build/sakshi-smoke.cyx 2>&1) || rc=$?
+          echo "----- cx smoke output -----"
+          echo "$out"
+          echo "---------------------------"
+          [ "$rc" = 0 ] || { echo "::error::the cx smoke exited $rc"; exit 1; }
+          for want in '\[INFO\] sakshi smoke ok' '\[ENTER\] smoke' '\[EXIT\] smoke ('; do
+            echo "$out" | grep -q "$want" || { echo "::error::cx smoke printed no '$want' line"; exit 1; }
+          done
+          echo "cx stderr logging and spans reach output ✓"
+
+      - name: The cyrius issue's repro on cxvm (dist/sakshi.cyr)
+        run: |
+          set -e
+          mkdir -p build
+          printf 'include "dist/sakshi.cyr"\nsyscall(60, 0);\n' > build/repro_cx.cyr
+          cyrius build --target=cx build/repro_cx.cyr build/repro.cyx
+          cxvm < build/repro.cyx
+          echo "the bundle compiles for cx and exits 0 on cxvm ✓"
+
+      - name: Tests on cxvm (syscall_consts.tcyr, sakshi.tcyr)
+        # sakshi.tcyr fences its three cycle-counter groups off cx and runs a cx
+        # clock group and the UDP refusal instead: 149 rows in 2.5.9, the floor
+        # below, so a fence that swallows the suite cannot pass.
+        run: |
+          set -e
+          mkdir -p build
+          for t in syscall_consts sakshi; do
+            cyrius build --target=cx "tests/tcyr/$t.tcyr" "build/$t.cyx"
+            rc=0; cxvm < "build/$t.cyx" > "build/$t.cx.out" 2>&1 || rc=$?
+            last=$(tail -1 "build/$t.cx.out")
+            echo "$t on cxvm: $last (exit $rc)"
+            if [ "$rc" != 0 ] || ! echo "$last" | grep -q ' passed, 0 failed'; then
+              grep -E 'FAIL|^cxvm:' "build/$t.cx.out" | head -20
+              echo "::error::tests/tcyr/$t.tcyr fails on cxvm"
+              exit 1
+            fi
+          done
+          n=$(tail -1 build/sakshi.cx.out | sed 's/ passed.*//')
+          [ "$n" -ge 149 ] || { echo "::error::sakshi.tcyr ran only $n rows on cxvm (floor 149)"; exit 1; }
+          echo "sakshi on cx: $n rows ✓"
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest

@@ -1,7 +1,8 @@
 # clock.cyr — cycle-counter timestamps for sakshi
 #
 # Reads the host's cycle counter directly without going through the kernel:
-# x86_64: `rdtsc`. aarch64: `mrs cntvct_el0` (added in step 5).
+# x86_64: `rdtsc`. aarch64: `mrs cntvct_el0` (added in step 5). cx has no
+# counter and reads the reference clock instead (see _sk_clock_init).
 #
 # Public-internal API:
 #   _sk_now_ticks()        → i64    raw cycle counter
@@ -233,7 +234,8 @@ fn _sk_clock_now_ns_raw(): i64 {
     return mret;
     #endif
     #ifndef CYRIUS_TARGET_MACOS
-    # Linux: clock_gettime(MONOTONIC_RAW=4) fills the timespec.
+    # Linux: clock_gettime(MONOTONIC_RAW=4) fills the timespec. cx too: cxvm
+    # serves 228 from the host's monotonic clock, in the Linux contract.
     var ret = syscall(_SK_SYS_CLOCK_GETTIME, 4, &ts);
     if (ret < 0) { return 0; }
     return load64(&ts) * 1000000000 + load64(&ts + 8);
@@ -397,6 +399,14 @@ fn _sk_clock_init(): i64 {
     # aarch64 init makes (clock_gettime, translated 228 → 113).
     _sk_clock_sample(&anchor_ticks, &anchor_ns);
     #endif
+
+    # cx (cyrius-x bytecode, cxvm) takes neither arm: it predefines no
+    # CYRIUS_ARCH_*, the guest has no cycle counter (_sk_now_ticks answers 0)
+    # and no nanosleep it can issue (cxvm passes 35 to the host without
+    # translating &sleep_ts). So nothing is installed, _sk_tsc_scale stays 0,
+    # and _sk_now_ns reads _sk_clock_now_ns_raw on every call: clock_gettime,
+    # which cxvm serves from the host's clock. sakshi_clock_recalibrate
+    # returns 0 there.
 
     # Q32 ns-per-tick scale: scale = (1e9 << 32) / freq.
     # 1e9 << 32 = 4.29e18 — fits in i64 (max ≈ 9.22e18).

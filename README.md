@@ -24,9 +24,9 @@ In Advaita Vedanta, the *sakshi* is pure observer-consciousness — always prese
 sakshi/
   src/
     lib.cyr         — public API, includes all modules (internal consumers start here)
-    syscalls.cyr    — arch-dispatched syscall numbers (x86_64 / aarch64 / AGNOS)
+    syscalls.cyr    — arch-dispatched syscall numbers (x86_64 / aarch64 / AGNOS / cx)
     clock.cyr       — cycle-counter timestamps (rdtsc / cntvct_el0), calibrated and
-                      anchored to the platform monotonic clock
+                      anchored to the platform monotonic clock (cx reads that clock)
     error.cyr       — packed error codes, categories, context
     trace.cyr       — log levels, structured output, fixed buffers
     span.cyr        — enter/exit tracking, timing

@@ -457,6 +457,13 @@ fn sakshi_aring_clear(): i64 {
 # number — silently emitting nothing on arm64, and on x86 running an unrelated
 # BSD call or taking SIGSYS. Refused up front below so the caller keeps a
 # working stderr/file target, exactly as the AGNOS branch does.
+#
+# NOT SUPPORTED ON cx (cyrius-x bytecode, cxvm) either (2.5.9). cxvm translates
+# guest pointers only for read / write / open and for the two calls it serves
+# from the host (clock_gettime, getrandom); every other number goes to the host
+# kernel raw. So sendto would hand the host a guest offset for both the packet
+# and the sockaddr. Refused up front below, as on Windows; socket and sendto
+# are not defined for cx at all.
 var _sk_udp_fd: i64 = 0 - 1;
 
 # sockaddr_in: { sin_family: u16, sin_port: u16, sin_addr: u32, zero: u64 } = 16 bytes
@@ -481,9 +488,14 @@ fn sakshi_output_udp(ip, port): i64 {
     # Windows PE: neither socket nor sendto is routed (see the note above).
     return 0 - 1;
     #endif
+    #ifdef CYRIUS_TARGET_CX
+    # cx: cxvm passes socket / sendto to the host untranslated (see above).
+    return 0 - 1;
+    #endif
     #ifndef CYRIUS_TARGET_AGNOS
     #ifndef CYRIUS_TARGET_MACOS
     #ifndef CYRIUS_TARGET_WIN
+    #ifndef CYRIUS_TARGET_CX
     # socket(AF_INET=2, SOCK_DGRAM=2, 0)
     var fd = syscall(_SK_SYS_SOCKET, 2, 2, 0);
     if (fd < 0) { return fd; }
@@ -500,6 +512,7 @@ fn sakshi_output_udp(ip, port): i64 {
 
     _sk_output_target = SK_OUT_UDP;
     return fd;
+    #endif
     #endif
     #endif
     #endif
@@ -539,7 +552,9 @@ fn _sk_write_udp_event(ts, level, category, msg, msg_len): i64 {
     #ifndef CYRIUS_TARGET_AGNOS
     #ifndef CYRIUS_TARGET_MACOS
     #ifndef CYRIUS_TARGET_WIN
+    #ifndef CYRIUS_TARGET_CX
     syscall(_SK_SYS_SENDTO, _sk_udp_fd, &pkt, total, 0, &_sk_udp_addr, 16);
+    #endif
     #endif
     #endif
     #endif

@@ -1,4 +1,6 @@
 # Test: sakshi — spans, ring buffer, UDP, binary decode, error codes, trace
+# CI's build-cx lane also builds this file with cycc_cx and runs it on cxvm
+# (2.5.9): the cycle-counter groups are fenced off cx and a cx group replaces them.
 include "lib/string.cyr"
 include "lib/fmt.cyr"
 include "lib/assert.cyr"
@@ -399,6 +401,19 @@ assert_eq(sakshi_set_output(SK_OUT_BUFFER), 0, "BUFFER -> 0");
 assert_eq(sakshi_set_output(SK_OUT_ATOMIC_RING), 0, "ATOMIC_RING -> 0");
 sakshi_set_output(SK_OUT_STDERR);
 
+#ifdef CYRIUS_TARGET_CX
+# ================================================================
+# UDP is refused on cx (2.5.9)
+# ================================================================
+test_group("UDP output refuses on cx");
+
+# cxvm passes socket / sendto to the host without translating their pointers
+# (src/output.cyr), so the target is refused up front and the current one kept.
+assert_eq(sakshi_output_udp(sakshi_ipv4(127, 0, 0, 1), 9), 0 - 1, "cx: sakshi_output_udp returns -1");
+assert_eq(_sk_output_target, SK_OUT_STDERR, "cx: the stderr target is kept");
+assert_eq(_sk_udp_fd, 0 - 1, "cx: no socket was opened");
+#endif
+
 # ================================================================
 # Edge cases
 # ================================================================
@@ -559,6 +574,15 @@ sakshi_ring_clear();
 
 sakshi_set_output_fd(2);
 
+# The clock groups' tolerance, 1 ms: "clock: anchored to the reference clock"
+# says why it is loose. Declared outside the cx fence below because the
+# calibration-failure group uses it on every target.
+var anc_tol = 1000000;
+
+# The next three groups test the cycle counter (rdtsc / cntvct_el0) and its
+# calibration. cx has neither (src/clock.cyr _sk_clock_init), so they are not
+# built for cx; its own clock group follows them (2.5.9).
+#ifndef CYRIUS_TARGET_CX
 # ================================================================
 # Cycle-counter clock (v2.2.0)
 # ================================================================
@@ -628,8 +652,7 @@ test_group("clock: anchored to the reference clock");
 # run. The tolerance only has to absorb the anchor bracket (~1 us) plus
 # scale error times the time since calibration (~50 ppm of well under a second
 # here), so 1 ms is loose by three orders of magnitude and still fails the old
-# conversion by four.
-var anc_tol = 1000000;
+# conversion by four. (anc_tol is declared above the cx fence.)
 var an0 = _sk_now_ns();
 var anref = _sk_clock_now_ns_raw();
 var an1 = _sk_now_ns();
@@ -683,6 +706,29 @@ var rr = _sk_clock_now_ns_raw();
 var rr1 = _sk_now_ns();
 assert_gte(rr, rr0 - anc_tol, "clock back on the reference for later groups (low)");
 assert_lte(rr, rr1 + anc_tol, "clock back on the reference for later groups (high)");
+#endif
+
+#ifdef CYRIUS_TARGET_CX
+# ================================================================
+# Clock: cx reads the reference clock (2.5.9)
+# ================================================================
+test_group("clock: cx reads the reference clock");
+
+# No cycle counter and no nanosleep the guest can issue, so nothing is
+# calibrated: init runs once and installs nothing, and every timestamp is the
+# reference clock (clock_gettime, served by cxvm from the host).
+assert_eq(_sk_clock_init_done, 1, "cx: init has run");
+assert_eq(_sk_tsc_freq_hz, 0, "cx: no counter frequency");
+assert_eq(_sk_tsc_scale, 0, "cx: no scale installed");
+assert_eq(sakshi_clock_recalibrate(), 0, "cx: recalibrate finds no counter, returns 0");
+assert_eq(_sk_tsc_scale, 0, "cx: still no scale after recalibrate");
+var cx0 = _sk_now_ns();
+var cxref = _sk_clock_now_ns_raw();
+var cx1 = _sk_now_ns();
+assert_gt(cx0, 0, "cx: timestamps are non-zero");
+assert_lte(cx0, cxref, "cx: a timestamp is not ahead of the reference");
+assert_lte(cxref, cx1, "cx: nor behind it");
+#endif
 
 # ================================================================
 # Clock: calibration-failure fallback (2.5.0)

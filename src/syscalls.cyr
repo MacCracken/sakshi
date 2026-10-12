@@ -69,11 +69,29 @@ const _SK_SYS_SENDTO        = 206;
 const _SK_AT_FDCWD          = 0 - 100;
 #endif
 
+# cyrius-x bytecode (cxvm). The cx driver predefines CYRIUS_TARGET_CX and NO
+# CYRIUS_ARCH_*, so neither arm above is taken there; until 2.5.9 no number
+# but clock_gettime was defined on cx and any program that included sakshi
+# failed to compile for cx (cyrius issue 2026-10-11-sakshi-fold-has-no-cx-arm).
+# The .cyx guest ABI is x86_64-Linux numbered. cxvm serves these four with
+# pointer translation (cyrius docs/platform-status.md § cyrius-x guest
+# contract; lib/syscalls.cyr's CX arm), plus clock_gettime below. Everything
+# else reaches the host kernel raw, with guest offsets where it expects
+# addresses: socket / sendto / nanosleep are deliberately NOT defined here, so
+# a use that is not compiled out for cx fails to compile, by name.
+#ifdef CYRIUS_TARGET_CX
+const _SK_SYS_WRITE         = 1;
+const _SK_SYS_OPEN          = 2;
+const _SK_SYS_CLOSE         = 3;
+const _SK_SYS_EXIT          = 60;
+#endif
+
 # clock_gettime: the reference clock in clock.cyr _sk_clock_now_ns_raw, on every
 # target but AGNOS. ⚠ The x86_64 number on EVERY arch, aarch64 included:
 # cyrius's aarch64 ESYSXLAT translates 228 → 113 (the native number), macOS
 # reroutes it to _clock_gettime_nsec_np on both Darwin backends, and Windows to
-# GetTickCount64 (the fallback when QueryPerformanceFrequency fails).
+# GetTickCount64 (the fallback when QueryPerformanceFrequency fails). On cx,
+# cxvm serves it from the host's own clock and fills the Linux timespec.
 const _SK_SYS_CLOCK_GETTIME = 228;
 #endif
 
@@ -87,8 +105,9 @@ const _SK_SYS_QPF           = 0xF039;
 # open(path, flags, mode) — arity-stable wrapper. x86_64 Linux calls `open`;
 # aarch64 calls `openat(AT_FDCWD, path, flags, mode)`; agnos `open` is
 # (name, namelen, flags) with AO_* bits (differ from Linux O_*), so compute the
-# byte length and remap the flags (mirrors lib/io.cyr file_open). Returns fd or
-# negative errno.
+# byte length and remap the flags (mirrors lib/io.cyr file_open); cx calls
+# `open`, which cxvm translates (2.5.9; until then no arm matched cx and this
+# fn had no body there). Returns fd or negative errno.
 fn _sk_open(path, flags, mode): i64 {
     #ifdef CYRIUS_TARGET_AGNOS
     var n = 0;
@@ -106,6 +125,9 @@ fn _sk_open(path, flags, mode): i64 {
     #endif
     #ifdef CYRIUS_ARCH_AARCH64
     return syscall(_SK_SYS_OPENAT, _SK_AT_FDCWD, path, flags, mode);
+    #endif
+    #ifdef CYRIUS_TARGET_CX
+    return syscall(_SK_SYS_OPEN, path, flags, mode);
     #endif
     #endif
 }

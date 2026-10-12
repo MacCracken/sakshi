@@ -11,7 +11,8 @@
 #
 # `cyrius test` compiles this for x86_64 Linux. The other blocks are checked
 # when the file is built for that target (`cyrius build --aarch64 | --win |
-# --agnos tests/tcyr/syscall_consts.tcyr`).
+# --agnos tests/tcyr/syscall_consts.tcyr`); the cx block (2.5.9) by CI's
+# build-cx lane, which builds it with cycc_cx and runs it on cxvm.
 
 include "lib/string.cyr"
 include "lib/fmt.cyr"
@@ -47,6 +48,12 @@ include "src/lib.cyr"
 #assert _SK_SYS_SOCKET == 198, "aarch64 socket"
 #assert _SK_SYS_SENDTO == 206, "aarch64 sendto"
 #assert _SK_AT_FDCWD == 0 - 100, "aarch64 AT_FDCWD"
+#endif
+#ifdef CYRIUS_TARGET_CX
+#assert _SK_SYS_WRITE == 1, "cx write"
+#assert _SK_SYS_OPEN == 2, "cx open"
+#assert _SK_SYS_CLOSE == 3, "cx close"
+#assert _SK_SYS_EXIT == 60, "cx exit"
 #endif
 # The x86_64 number on every arch: aarch64 renumbers it at run time.
 #assert _SK_SYS_CLOCK_GETTIME == 228, "clock_gettime"
