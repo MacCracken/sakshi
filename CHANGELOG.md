@@ -5,6 +5,24 @@ All notable changes to Sakshi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.10] - 2026-10-13
+
+Fix release: sakshi's static data drops from 69,232 B to 9,088 B. No API or behaviour change.
+
+### Fixed — four private buffers declared as slots, not bytes (cyrius issue 2026-10-12-sandhi-include-prints-large-static-advisory)
+
+- **The bug.** A bare top-level `var x[N]` in cyrius is N 8-byte SLOTS, not N bytes. sakshi declared its two
+  4 KiB event rings, the UDP `sockaddr_in` and the span stack that way. Every index masks with `& 0xFFF`, and
+  every comment says "4KB", so each ring reserved 32,768 B to use 4,096. The span stack reserved 3,072 B for
+  16 × 24 = 384, and the address reserved 128 B for 16. Every program that included sakshi carried 60,144 B
+  it never touched. That was enough to put every `lib/sandhi.cyr` build (and so every `lib/yantra.cyr` build)
+  over cyrius's 131,072 B large-static-data advisory.
+- **The fix.** `_sk_ring_buf: u8[4096]`, `_sk_aring_buf: u8[4096]`, `_sk_udp_addr: u8[16]` and
+  `_sk_span_stack: u8[384]` (`src/output.cyr`, `src/span.cyr`). Every access already stays inside the byte
+  sizes, so nothing reads or writes differently.
+- Measured with cyrius 6.7.11's `build/cycc`, `include "dist/sakshi.cyr"` plus a 131,072 B pad: 200,304 B →
+  140,160 B of static data. The program logs the same line.
+
 ## [2.5.9] - 2026-10-11
 
 Fix release: sakshi compiles and runs on cyrius's cx target (cyrius-x bytecode,
